@@ -7,6 +7,7 @@ from datetime import datetime
 import logging
 
 from backend.domain.cost_models import CostEstimate, CostLineItem, UnpricedResource
+from backend.domain.scenario_models import ScenarioInput, ScenarioDeltaLineItem, ScenarioEstimateResult
 from backend.pricing.aws_pricing_client import AWSPricingClient, AWSPricingError
 from backend.pricing.azure_pricing_client import AzurePricingClient, AzurePricingError
 from backend.pricing.gcp_pricing_client import GCPPricingClient, GCPPricingError
@@ -431,3 +432,145 @@ class CostEstimator:
                 coverage[cloud] = "partial"  # Attempted but no prices found
         
         return coverage
+    
+    async def estimate_with_scenario(
+        self,
+        intent_graph: Dict[str, Any],
+        scenario_input: ScenarioInput
+    ) -> ScenarioEstimateResult:
+        """
+        Estimate costs with scenario modeling.
+        
+        Runs base estimate, then scenario estimate with overrides,
+        and calculates deltas between them.
+        
+        Args:
+            intent_graph: Intent graph from Terraform interpreter
+            scenario_input: Scenario input parameters (overrides)
+        
+        Returns:
+            ScenarioEstimateResult with base, scenario, and deltas
+        
+        Raises:
+            CostEstimatorError: If estimation fails
+        """
+        # Run base estimate (existing logic)
+        base_estimate = await self.estimate(
+            intent_graph=intent_graph,
+            region_override=None,
+            autoscaling_average_override=None
+        )
+        
+        # Build assumptions list
+        assumptions = []
+        
+        # Run scenario estimate with overrides
+        scenario_region_override = scenario_input.region_override
+        scenario_autoscaling_override = scenario_input.autoscaling_average_override
+        
+        # Track if region changed
+        region_changed = False
+        if scenario_region_override and scenario_region_override != base_estimate.region:
+            region_changed = True
+            assumptions.append(
+                f"Region overridden from {base_estimate.region} to {scenario_region_override}"
+            )
+        
+        if scenario_autoscaling_override is not None:
+            assumptions.append(
+                f"Autoscaling average overridden to {scenario_autoscaling_override} instances"
+            )
+        
+        if scenario_input.users is not None:
+            assumptions.append(
+                f"Users overridden to {scenario_input.users}"
+            )
+            # Note: User multiplier logic would be applied here for request-based services
+            # Currently not implemented as per requirements
+        
+        # Run scenario estimate
+        scenario_estimate = await self.estimate(
+            intent_graph=intent_graph,
+            region_override=scenario_region_override,
+            autoscaling_average_override=scenario_autoscaling_override
+        )
+        
+        # Calculate deltas
+        deltas = self._calculate_deltas(
+            base_estimate.line_items,
+            scenario_estimate.line_items
+        )
+        
+        return ScenarioEstimateResult(
+            base_estimate=base_estimate,
+            scenario_estimate=scenario_estimate,
+            deltas=deltas,
+            region_changed=region_changed,
+            assumptions=assumptions
+        )
+    
+    def _calculate_deltas(
+        self,
+        base_line_items: List[CostLineItem],
+        scenario_line_items: List[CostLineItem]
+    ) -> List[ScenarioDeltaLineItem]:
+        """
+        Calculate deltas between base and scenario line items.
+        
+        Matches resources by resource_name + terraform_type.
+        If a resource exists in base but not scenario (unpriced), delta is null.
+        If a resource exists in scenario but not base, it's included with base_cost = 0.
+        
+        Args:
+            base_line_items: Base estimate line items
+            scenario_line_items: Scenario estimate line items
+        
+        Returns:
+            List of ScenarioDeltaLineItem
+        """
+        # Build lookup maps for efficient matching
+        base_map = {
+            (item.resource_name, item.terraform_type): item
+            for item in base_line_items
+        }
+        scenario_map = {
+            (item.resource_name, item.terraform_type): item
+            for item in scenario_line_items
+        }
+        
+        # Collect all unique resource keys
+        all_keys = set(base_map.keys()) | set(scenario_map.keys())
+        
+        deltas = []
+        
+        for resource_key in all_keys:
+            resource_name, terraform_type = resource_key
+            base_item = base_map.get(resource_key)
+            scenario_item = scenario_map.get(resource_key)
+            
+            # Skip if both are missing (shouldn't happen)
+            if not base_item and not scenario_item:
+                continue
+            
+            # Get costs (0 if missing)
+            base_cost = base_item.monthly_cost_usd if base_item else 0.0
+            scenario_cost = scenario_item.monthly_cost_usd if scenario_item else 0.0
+            
+            # Calculate delta
+            delta_usd = scenario_cost - base_cost
+            
+            # Calculate delta percentage
+            delta_percent = None
+            if base_cost > 0:
+                delta_percent = (delta_usd / base_cost) * 100
+            
+            deltas.append(ScenarioDeltaLineItem(
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                base_monthly_cost_usd=base_cost,
+                scenario_monthly_cost_usd=scenario_cost,
+                delta_usd=delta_usd,
+                delta_percent=delta_percent
+            ))
+        
+        return deltas

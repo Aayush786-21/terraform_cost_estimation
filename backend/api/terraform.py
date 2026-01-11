@@ -10,6 +10,7 @@ from backend.services.github_client import GitHubClient
 from backend.services.terraform_interpreter import TerraformInterpreter, TerraformInterpreterError
 from backend.services.cost_estimator import CostEstimator, CostEstimatorError
 from backend.services.mistral_client import MistralAPIError
+from backend.domain.scenario_models import ScenarioInput
 from backend.utils.fs import extract_and_scan_terraform_files
 
 
@@ -44,6 +45,12 @@ class TerraformEstimateRequest(BaseModel):
     intent_graph: Dict[str, Any] = Field(..., description="Intent graph from Terraform interpretation")
     region_override: Optional[str] = Field(None, description="Optional region override for pricing")
     scenario: Optional[CostEstimateScenario] = Field(None, description="Optional scenario parameters")
+
+
+class ScenarioModelRequest(BaseModel):
+    """Request model for scenario modeling."""
+    intent_graph: Dict[str, Any] = Field(..., description="Intent graph from Terraform interpretation")
+    scenario: Dict[str, Any] = Field(..., description="Scenario input parameters")
 
 
 def get_access_token_from_session(request: Request) -> str:
@@ -326,4 +333,116 @@ async def estimate_terraform_costs(
         raise HTTPException(
             status_code=500,
             detail="An unexpected error occurred while estimating costs"
+        ) from error
+
+
+@router.post("/api/terraform/estimate/scenario")
+async def estimate_scenario(
+    request: Request,
+    scenario_request: ScenarioModelRequest
+) -> Dict[str, Any]:
+    """
+    Estimate costs with scenario modeling and delta comparison.
+    
+    Runs base estimate, then scenario estimate with overrides,
+    and calculates deltas between them.
+    
+    Supports:
+    - Region override (compare costs in different regions)
+    - Autoscaling average override (compare with different scaling assumptions)
+    - Users override (for request-based services, placeholder for now)
+    
+    Requires authentication via GitHub OAuth.
+    
+    Args:
+        request: FastAPI request object
+        scenario_request: Request body with intent graph and scenario parameters
+    
+    Returns:
+        JSON response with base estimate, scenario estimate, and deltas
+    
+    Raises:
+        HTTPException: If authentication fails, invalid input,
+                       pricing API fails, or other errors occur
+    """
+    try:
+        # Authenticate
+        get_access_token_from_session(request)
+        
+        # Validate input
+        intent_graph = scenario_request.intent_graph
+        if not intent_graph:
+            raise HTTPException(
+                status_code=400,
+                detail="Intent graph is required"
+            )
+        
+        if "resources" not in intent_graph:
+            raise HTTPException(
+                status_code=422,
+                detail="Intent graph must contain 'resources' field"
+            )
+        
+        scenario_dict = scenario_request.scenario
+        if not scenario_dict:
+            raise HTTPException(
+                status_code=400,
+                detail="Scenario parameters are required"
+            )
+        
+        # Build ScenarioInput from request
+        try:
+            scenario_input = ScenarioInput(
+                region_override=scenario_dict.get("region_override"),
+                autoscaling_average_override=scenario_dict.get("autoscaling_average_override"),
+                users=scenario_dict.get("users")
+            )
+        except (TypeError, ValueError) as error:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid scenario parameters: {str(error)}"
+            ) from error
+        
+        # Validate scenario inputs
+        if scenario_input.autoscaling_average_override is not None:
+            if scenario_input.autoscaling_average_override < 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Autoscaling average override must be non-negative"
+                )
+        
+        if scenario_input.users is not None:
+            if scenario_input.users < 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Users must be non-negative"
+                )
+        
+        # Initialize estimator and run scenario estimation
+        estimator = CostEstimator()
+        try:
+            scenario_result = await estimator.estimate_with_scenario(
+                intent_graph=intent_graph,
+                scenario_input=scenario_input
+            )
+        except CostEstimatorError as error:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to estimate scenario: {str(error)}"
+            ) from error
+        
+        # Build response
+        return {
+            "status": "ok",
+            "scenario_result": scenario_result.to_dict()
+        }
+    
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as error:
+        # Log error in production, but don't expose details to client
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred while estimating scenario"
         ) from error
