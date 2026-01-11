@@ -1,0 +1,237 @@
+"""
+API routes for Terraform file operations.
+"""
+from typing import Dict, Any
+from fastapi import APIRouter, Request, HTTPException
+from pydantic import BaseModel, Field
+import httpx
+
+from backend.services.github_client import GitHubClient
+from backend.services.terraform_interpreter import TerraformInterpreter, TerraformInterpreterError
+from backend.services.mistral_client import MistralAPIError
+from backend.utils.fs import extract_and_scan_terraform_files
+
+
+router = APIRouter()
+
+
+class TerraformFilesRequest(BaseModel):
+    """Request model for fetching Terraform files from a repository."""
+    owner: str = Field(..., description="Repository owner (username or organization)")
+    repo: str = Field(..., description="Repository name")
+    branch: str = Field(default="main", description="Branch name (default: main)")
+
+
+class TerraformFile(BaseModel):
+    """Model for a single Terraform file."""
+    path: str = Field(..., description="File path relative to repository root")
+    content: str = Field(..., description="Raw Terraform file content")
+
+
+class TerraformInterpretRequest(BaseModel):
+    """Request model for interpreting Terraform files."""
+    files: List[TerraformFile] = Field(..., description="List of Terraform files to interpret")
+
+
+def get_access_token_from_session(request: Request) -> str:
+    """
+    Extract GitHub access token from session.
+    
+    Args:
+        request: FastAPI request object
+    
+    Returns:
+        GitHub access token string
+    
+    Raises:
+        HTTPException: If user is not authenticated
+    """
+    token = request.session.get("github_access_token")
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail="Not authenticated. Please sign in with GitHub."
+        )
+    return token
+
+
+@router.post("/api/terraform/files")
+async def get_terraform_files(
+    request: Request,
+    file_request: TerraformFilesRequest
+) -> Dict[str, Any]:
+    """
+    Fetch all Terraform files from a GitHub repository.
+    
+    Downloads the repository archive for the specified branch,
+    extracts it, scans for .tf files, and returns their paths and contents.
+    
+    Requires authentication via GitHub OAuth.
+    
+    Args:
+        request: FastAPI request object
+        file_request: Request body with owner, repo, and branch
+    
+    Returns:
+        JSON response with Terraform files and metadata
+    
+    Raises:
+        HTTPException: If authentication fails, repo/branch not found,
+                       no Terraform files found, or other errors occur
+    """
+    try:
+        # Validate input
+        if not file_request.owner or not file_request.repo:
+            raise HTTPException(
+                status_code=400,
+                detail="Owner and repo are required"
+            )
+        
+        if not file_request.branch:
+            raise HTTPException(
+                status_code=400,
+                detail="Branch is required"
+            )
+        
+        # Authenticate and get token
+        access_token = get_access_token_from_session(request)
+        github_client = GitHubClient(access_token)
+        
+        # Download repository archive
+        try:
+            archive_data = await github_client.download_repository_archive(
+                owner=file_request.owner,
+                repo=file_request.repo,
+                ref=file_request.branch
+            )
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code == 404:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Repository {file_request.owner}/{file_request.repo} or branch '{file_request.branch}' not found"
+                ) from error
+            raise HTTPException(
+                status_code=error.response.status_code,
+                detail="Failed to download repository archive"
+            ) from error
+        
+        # Extract and scan for Terraform files
+        try:
+            terraform_files = extract_and_scan_terraform_files(
+                zip_data=archive_data,
+                owner=file_request.owner,
+                repo=file_request.repo
+            )
+        except ValueError as error:
+            # No Terraform files found
+            if "No Terraform files found" in str(error):
+                raise HTTPException(
+                    status_code=404,
+                    detail=str(error)
+                ) from error
+            raise HTTPException(
+                status_code=400,
+                detail=str(error)
+            ) from error
+        
+        # Build response
+        return {
+            "status": "ok",
+            "repo": f"{file_request.owner}/{file_request.repo}",
+            "branch": file_request.branch,
+            "terraform_file_count": len(terraform_files),
+            "files": terraform_files,
+        }
+    
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except httpx.RequestError as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Failed to connect to GitHub API"
+        ) from error
+    except Exception as error:
+        # Log error in production, but don't expose details to client
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred while fetching Terraform files"
+        ) from error
+
+
+@router.post("/api/terraform/interpret")
+async def interpret_terraform_files(
+    request: Request,
+    interpret_request: TerraformInterpretRequest
+) -> Dict[str, Any]:
+    """
+    Interpret Terraform files into structured cost-intent representation.
+    
+    Uses Mistral AI to analyze Terraform resources and extract structured
+    information including cloud provider, service type, resource counts,
+    and usage dimensions. Does NOT calculate prices.
+    
+    Requires authentication via GitHub OAuth.
+    
+    Args:
+        request: FastAPI request object
+        interpret_request: Request body with list of Terraform files
+    
+    Returns:
+        JSON response with intent graph and confidence level
+    
+    Raises:
+        HTTPException: If authentication fails, invalid input,
+                       Mistral API fails, or other errors occur
+    """
+    try:
+        # Authenticate
+        get_access_token_from_session(request)
+        
+        # Validate input
+        if not interpret_request.files:
+            raise HTTPException(
+                status_code=400,
+                detail="At least one Terraform file is required"
+            )
+        
+        # Convert Pydantic models to dicts for interpreter
+        terraform_files = [
+            {"path": file.path, "content": file.content}
+            for file in interpret_request.files
+        ]
+        
+        # Initialize interpreter and interpret
+        interpreter = TerraformInterpreter()
+        try:
+            intent_graph = await interpreter.interpret(terraform_files)
+        except TerraformInterpreterError as error:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to interpret Terraform files: {str(error)}"
+            ) from error
+        except MistralAPIError as error:
+            raise HTTPException(
+                status_code=502,
+                detail="Mistral AI service unavailable"
+            ) from error
+        
+        # Calculate overall confidence level
+        confidence_level = interpreter.calculate_confidence_level(intent_graph)
+        
+        # Build response
+        return {
+            "status": "ok",
+            "intent_graph": intent_graph,
+            "confidence_level": confidence_level,
+        }
+    
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as error:
+        # Log error in production, but don't expose details to client
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred while interpreting Terraform files"
+        ) from error
