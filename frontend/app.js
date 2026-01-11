@@ -8,6 +8,9 @@ let baseEstimate = null;
 let currentScenario = null;
 let currentIntentGraph = null;
 
+// State for insight focus
+let focusedInsightId = null;
+
 // Common regions for comparison
 const COMMON_REGIONS = [
     { code: 'us-east-1', name: 'US East (N. Virginia)' },
@@ -266,6 +269,7 @@ function renderCostDrivers(lineItems, totalCost, scenarioDeltas = null) {
         const card = document.createElement('div');
         card.className = `cost-driver-card ${getCostIntensityLevel(categoryData.percentage)}`;
         card.dataset.category = categoryData.category;
+        card.dataset.categoryName = getCategoryName(categoryData.category);
         
         const percentage = categoryData.percentage;
         const intensity = getCostIntensityLevel(percentage);
@@ -408,6 +412,192 @@ function renderDeltaIndicator(deltaUsd, deltaPercent, size = 'normal') {
     const sizeClass = size === 'small' ? 'small' : '';
     
     return `<span class="delta-indicator ${isPositive ? 'positive' : 'negative'} ${sizeClass}">${sign}${formatCurrency(deltaUsd)}${percentStr}</span>`;
+}
+
+/**
+ * Focus on an insight and highlight related cost elements
+ */
+function focusInsight(insightId, affectedResources, insightType) {
+    // Clear previous focus
+    clearInsightFocus();
+    
+    // Set new focus
+    focusedInsightId = insightId;
+    
+    const insightCard = document.querySelector(`[data-insight-id="${insightId}"]`);
+    if (!insightCard) return;
+    
+    // Mark insight card as active
+    insightCard.classList.add('insight-active');
+    
+    // Show clear button
+    const clearBtn = insightCard.querySelector('.clear-focus-btn');
+    if (clearBtn) clearBtn.style.display = 'block';
+    
+    // Get all line items to check category-level insights
+    const allRows = document.querySelectorAll('.cost-table tbody tr[data-resource-name]');
+    const allCards = document.querySelectorAll('.cost-driver-card[data-category]');
+    
+    // Check if this is a category-level insight (e.g., high_cost_driver referring to compute)
+    const isCategoryInsight = insightType === 'high_cost_driver' || 
+                              insightType === 'region_comparison' ||
+                              insightType === 'scaling_assumption';
+    
+    // Match resources
+    const matchingRows = [];
+    const matchingCards = new Set();
+    
+    affectedResources.forEach(resourceName => {
+        // Find matching table rows by resource_name
+        allRows.forEach(row => {
+            const rowResourceName = row.dataset.resourceName;
+            if (rowResourceName === resourceName) {
+                matchingRows.push(row);
+                
+                // Also highlight the category card for this resource
+                const category = row.dataset.category;
+                if (category) {
+                    matchingCards.add(category);
+                }
+            }
+        });
+        
+        // For category-level insights, highlight entire categories
+        if (isCategoryInsight) {
+            // Try to infer category from resource name patterns
+            // This is a fallback - ideally insights would include category info
+            const resourceCategory = inferCategoryFromResource(resourceName, allRows);
+            if (resourceCategory) {
+                matchingCards.add(resourceCategory);
+            }
+        }
+    });
+    
+    // If no specific resources matched but it's a category insight, try category matching
+    if (matchingRows.length === 0 && isCategoryInsight) {
+        // For high_cost_driver insights, we might want to highlight based on description
+        // This is a heuristic - in production, insights should include category info
+        if (insightType === 'high_cost_driver') {
+            // Common patterns: compute, database, storage mentioned in description
+            const insightCard = document.querySelector(`[data-insight-id="${insightId}"]`);
+            const description = insightCard ? insightCard.querySelector('.insight-description')?.textContent.toLowerCase() : '';
+            
+            if (description.includes('compute') || description.includes('instance') || description.includes('ec2') || description.includes('vm')) {
+                const computeCard = document.querySelector('.cost-driver-card[data-category="compute"]');
+                if (computeCard) matchingCards.add('compute');
+            }
+            if (description.includes('database') || description.includes('db') || description.includes('rds')) {
+                const dbCard = document.querySelector('.cost-driver-card[data-category="database"]');
+                if (dbCard) matchingCards.add('database');
+            }
+            if (description.includes('storage') || description.includes('s3') || description.includes('bucket')) {
+                const storageCard = document.querySelector('.cost-driver-card[data-category="storage"]');
+                if (storageCard) matchingCards.add('storage');
+            }
+        }
+    }
+    
+    // Apply highlights
+    matchingRows.forEach(row => {
+        row.classList.add('highlight-soft');
+    });
+    
+    matchingCards.forEach(category => {
+        const card = document.querySelector(`.cost-driver-card[data-category="${category}"]`);
+        if (card) {
+            card.classList.add('highlight-outline');
+        }
+    });
+    
+    // Check if detailed table is collapsed and show hint if needed
+    const breakdownContent = document.getElementById('breakdown-content');
+    const hasMatchingRows = matchingRows.length > 0;
+    
+    if (hasMatchingRows && breakdownContent && breakdownContent.style.display === 'none') {
+        showTableHint(insightCard, matchingRows.length);
+    }
+}
+
+/**
+ * Infer category from resource name (fallback for category-level insights)
+ */
+function inferCategoryFromResource(resourceName, allRows) {
+    // Find the row with this resource name
+    for (const row of allRows) {
+        if (row.dataset.resourceName === resourceName) {
+            return row.dataset.category;
+        }
+    }
+    return null;
+}
+
+/**
+ * Clear insight focus and remove highlights
+ */
+function clearInsightFocus() {
+    // Remove active state from all insights
+    document.querySelectorAll('.insight-card').forEach(card => {
+        card.classList.remove('insight-active');
+        const clearBtn = card.querySelector('.clear-focus-btn');
+        if (clearBtn) clearBtn.style.display = 'none';
+    });
+    
+    // Remove highlights from table rows
+    document.querySelectorAll('.cost-table tbody tr').forEach(row => {
+        row.classList.remove('highlight-soft');
+    });
+    
+    // Remove highlights from cost driver cards
+    document.querySelectorAll('.cost-driver-card').forEach(card => {
+        card.classList.remove('highlight-outline');
+    });
+    
+    // Hide table hint
+    hideTableHint();
+    
+    // Clear state
+    focusedInsightId = null;
+}
+
+/**
+ * Show hint when detailed table is collapsed but insight references it
+ */
+function showTableHint(insightCard, matchingCount) {
+    // Remove existing hint if any
+    hideTableHint();
+    
+    const hint = document.createElement('div');
+    hint.className = 'table-hint';
+    hint.innerHTML = `
+        <span class="table-hint-text">
+            This insight refers to ${matchingCount} item${matchingCount !== 1 ? 's' : ''} in the detailed breakdown.
+        </span>
+        <button class="table-hint-button" id="show-details-from-hint">Show Details</button>
+    `;
+    
+    insightCard.appendChild(hint);
+    
+    // Add click handler to hint button
+    const hintButton = hint.querySelector('#show-details-from-hint');
+    if (hintButton) {
+        hintButton.addEventListener('click', () => {
+            const breakdownContent = document.getElementById('breakdown-content');
+            const toggleButton = document.getElementById('toggle-breakdown');
+            if (breakdownContent && toggleButton) {
+                breakdownContent.style.display = 'block';
+                toggleButton.setAttribute('aria-expanded', 'true');
+                toggleButton.querySelector('.button-text').textContent = 'Hide Details';
+            }
+            hideTableHint();
+        });
+    }
+}
+
+/**
+ * Hide table hint
+ */
+function hideTableHint() {
+    document.querySelectorAll('.table-hint').forEach(hint => hint.remove());
 }
 
 /**
@@ -658,6 +848,17 @@ function renderCostTable(lineItems, deltas = null) {
         const intensity = calculateCostIntensity(item.monthly_cost_usd, maxCost);
         row.className = `cost-row ${getCostRowClass(intensity)}`;
         
+        // Add data attributes for insight linking
+        if (item.resource_name) {
+            row.dataset.resourceName = item.resource_name;
+        }
+        if (item.terraform_type) {
+            row.dataset.terraformType = item.terraform_type;
+        }
+        if (item.category) {
+            row.dataset.category = item.category;
+        }
+        
         // Cloud
         const cloudCell = document.createElement('td');
         cloudCell.appendChild(renderCloudBadge(item.cloud || 'unknown'));
@@ -838,9 +1039,16 @@ function renderInsights(insights) {
         return;
     }
     
-    insights.forEach(insight => {
+    insights.forEach((insight, index) => {
         const card = document.createElement('div');
         card.className = 'insight-card';
+        card.dataset.insightId = `insight-${index}`;
+        if (insight.type) {
+            card.dataset.insightType = insight.type;
+        }
+        
+        // Store affected resources for matching
+        const affectedResources = insight.affected_resources || [];
         
         card.innerHTML = `
             <div class="insight-header">
@@ -852,7 +1060,7 @@ function renderInsights(insights) {
                 <div class="insight-resources">
                     <div class="insight-resources-label">Affected Resources:</div>
                     ${insight.affected_resources.map(resource => 
-                        `<span class="insight-resource-tag">${resource}</span>`
+                        `<span class="insight-resource-tag" data-resource-name="${resource}" role="button" tabindex="0">${resource}</span>`
                     ).join('')}
                 </div>
             ` : ''}
@@ -869,7 +1077,49 @@ function renderInsights(insights) {
             ${insight.disclaimer ? `
                 <div class="insight-disclaimer">${insight.disclaimer}</div>
             ` : ''}
+            <div class="insight-actions">
+                <button class="clear-focus-btn" style="display: none;">Clear Focus</button>
+            </div>
         `;
+        
+        // Add click handler for the entire card
+        card.addEventListener('click', (e) => {
+            // Don't trigger if clicking on resource tag (handled separately)
+            if (e.target.classList.contains('insight-resource-tag')) return;
+            // Don't trigger if clicking on clear button
+            if (e.target.classList.contains('clear-focus-btn')) return;
+            
+            focusInsight(`insight-${index}`, affectedResources, insight.type);
+        });
+        
+        // Add click handlers for resource tags
+        const resourceTags = card.querySelectorAll('.insight-resource-tag');
+        resourceTags.forEach(tag => {
+            tag.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const resourceName = tag.dataset.resourceName;
+                focusInsight(`insight-${index}`, [resourceName], insight.type);
+            });
+            
+            // Keyboard accessibility
+            tag.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const resourceName = tag.dataset.resourceName;
+                    focusInsight(`insight-${index}`, [resourceName], insight.type);
+                }
+            });
+        });
+        
+        // Add clear focus button handler
+        const clearBtn = card.querySelector('.clear-focus-btn');
+        if (clearBtn) {
+            clearBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                clearInsightFocus();
+            });
+        }
         
         container.appendChild(card);
     });
@@ -1060,6 +1310,9 @@ async function applyScenario(scenarioParams) {
  */
 function resetScenario() {
     currentScenario = null;
+    
+    // Clear insight focus when resetting
+    clearInsightFocus();
     
     // Hide scenario views
     hideScenarioViews();
