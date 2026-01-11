@@ -1,0 +1,373 @@
+"""
+Cost estimator service.
+Converts intent graph into cost estimates using official pricing APIs.
+"""
+from typing import Dict, Any, List, Optional
+from datetime import datetime
+import logging
+
+from backend.domain.cost_models import CostEstimate, CostLineItem, UnpricedResource
+from backend.pricing.aws_pricing_client import AWSPricingClient, AWSPricingError
+from backend.pricing.azure_pricing_client import AzurePricingClient, AzurePricingError
+from backend.pricing.gcp_pricing_client import GCPPricingClient, GCPPricingError
+from backend.core.config import config
+
+
+logger = logging.getLogger(__name__)
+
+
+class CostEstimatorError(Exception):
+    """Raised when cost estimation fails."""
+    pass
+
+
+class CostEstimator:
+    """Service for estimating costs from Terraform intent graph."""
+    
+    def __init__(
+        self,
+        aws_client: AWSPricingClient = None,
+        azure_client: AzurePricingClient = None,
+        gcp_client: GCPPricingClient = None
+    ):
+        """
+        Initialize cost estimator with pricing clients.
+        
+        Args:
+            aws_client: AWS pricing client (creates new if None)
+            azure_client: Azure pricing client (creates new if None)
+            gcp_client: GCP pricing client (creates new if None)
+        """
+        self.aws_client = aws_client or AWSPricingClient()
+        self.azure_client = azure_client or AzurePricingClient()
+        self.gcp_client = gcp_client or GCPPricingClient()
+    
+    def _resolve_region(
+        self,
+        region_info: Dict[str, Any],
+        region_override: Optional[str] = None
+    ) -> Tuple[str, List[str]]:
+        """
+        Resolve region from region_info, with optional override.
+        
+        Args:
+            region_info: Region info from intent graph
+            region_override: Optional region override from request
+        
+        Returns:
+            Tuple of (resolved_region, assumptions_list)
+        """
+        assumptions = []
+        
+        if region_override:
+            assumptions.append(f"Region overridden to {region_override}")
+            return region_override, assumptions
+        
+        region_source = region_info.get("source", "unknown")
+        region_value = region_info.get("value")
+        
+        if region_source == "explicit" and region_value:
+            return region_value, assumptions
+        
+        # Default region based on cloud provider
+        # Could be enhanced to detect from provider config
+        default_region = "us-east-1"  # Conservative default
+        assumptions.append(f"Region not specified, using default: {default_region}")
+        return default_region, assumptions
+    
+    def _resolve_count(
+        self,
+        count_model: Dict[str, Any],
+        autoscaling_average_override: Optional[int] = None
+    ) -> Tuple[Optional[int], List[str]]:
+        """
+        Resolve resource count from count_model.
+        
+        Args:
+            count_model: Count model from intent graph
+            autoscaling_average_override: Optional override for autoscaling average
+        
+        Returns:
+            Tuple of (count_value, assumptions_list)
+        """
+        assumptions = []
+        count_type = count_model.get("type", "unknown")
+        
+        if count_type == "fixed":
+            value = count_model.get("value")
+            if value is not None:
+                return int(value), assumptions
+            assumptions.append("Fixed count value is unknown")
+            return None, assumptions
+        
+        elif count_type == "autoscaling":
+            if autoscaling_average_override is not None:
+                assumptions.append(f"Using provided autoscaling average: {autoscaling_average_override}")
+                return autoscaling_average_override, assumptions
+            
+            # Try to use average of min/max if available
+            min_val = count_model.get("min")
+            max_val = count_model.get("max")
+            if min_val is not None and max_val is not None:
+                average = (min_val + max_val) / 2
+                assumptions.append(f"Autoscaling: using average of min/max: {average}")
+                return int(average), assumptions
+            
+            assumptions.append("Autoscaling: cannot determine average count")
+            return None, assumptions
+        
+        else:
+            assumptions.append(f"Count type '{count_type}' cannot be resolved")
+            return None, assumptions
+    
+    async def _price_aws_resource(
+        self,
+        resource: Dict[str, Any],
+        resolved_region: str,
+        resolved_count: int,
+        assumptions: List[str]
+    ) -> Optional[CostLineItem]:
+        """
+        Price an AWS resource.
+        
+        Args:
+            resource: Resource from intent graph
+            resolved_region: Resolved region
+            resolved_count: Resolved resource count
+            assumptions: List of assumptions (mutated)
+        
+        Returns:
+            CostLineItem if priced, None otherwise
+        """
+        service = resource.get("service", "")
+        terraform_type = resource.get("terraform_type", "")
+        resource_name = resource.get("name", "unknown")
+        size_hint = resource.get("size", {})
+        usage = resource.get("usage", {})
+        count_model = resource.get("count_model", {})
+        confidence = count_model.get("confidence", "low")
+        
+        # Extract instance type or SKU
+        instance_type = size_hint.get("instance_type") or size_hint.get("sku")
+        if not instance_type:
+            return None
+        
+        # Determine pricing unit and calculate
+        hours_per_month = usage.get("hours_per_month", config.HOURS_PER_MONTH)
+        assumptions.append(f"{hours_per_month} hours/month")
+        
+        try:
+            hourly_price = None
+            
+            # Route to appropriate pricing method
+            if "EC2" in service or terraform_type == "aws_instance":
+                hourly_price = await self.aws_client.get_ec2_instance_price(
+                    instance_type=instance_type,
+                    region=resolved_region
+                )
+            elif "RDS" in service or terraform_type.startswith("aws_db"):
+                hourly_price = await self.aws_client.get_rds_instance_price(
+                    instance_type=instance_type,
+                    region=resolved_region
+                )
+            
+            if hourly_price is None:
+                return None
+            
+            # Calculate monthly cost
+            monthly_cost = hourly_price * hours_per_month * resolved_count
+            assumptions.append(f"${hourly_price:.4f}/hour × {resolved_count} instances")
+            
+            return CostLineItem(
+                cloud="aws",
+                service=service,
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=monthly_cost,
+                pricing_unit="hour",
+                assumptions=assumptions,
+                priced=True,
+                confidence=confidence
+            )
+        
+        except AWSPricingError as error:
+            logger.warning(f"Failed to price AWS resource {resource_name}: {error}")
+            return None
+    
+    async def _price_azure_resource(
+        self,
+        resource: Dict[str, Any],
+        resolved_region: str,
+        resolved_count: int,
+        assumptions: List[str]
+    ) -> Optional[CostLineItem]:
+        """
+        Price an Azure resource.
+        
+        Args:
+            resource: Resource from intent graph
+            resolved_region: Resolved region
+            resolved_count: Resolved resource count
+            assumptions: List of assumptions (mutated)
+        
+        Returns:
+            CostLineItem if priced, None otherwise
+        """
+        service = resource.get("service", "")
+        terraform_type = resource.get("terraform_type", "")
+        resource_name = resource.get("name", "unknown")
+        size_hint = resource.get("size", {})
+        usage = resource.get("usage", {})
+        count_model = resource.get("count_model", {})
+        confidence = count_model.get("confidence", "low")
+        
+        sku_name = size_hint.get("sku") or size_hint.get("instance_type")
+        if not sku_name:
+            return None
+        
+        hours_per_month = usage.get("hours_per_month", config.HOURS_PER_MONTH)
+        assumptions.append(f"{hours_per_month} hours/month")
+        
+        try:
+            hourly_price = await self.azure_client.get_virtual_machine_price(
+                sku_name=sku_name,
+                region=resolved_region
+            )
+            
+            if hourly_price is None:
+                return None
+            
+            monthly_cost = hourly_price * hours_per_month * resolved_count
+            assumptions.append(f"${hourly_price:.4f}/hour × {resolved_count} instances")
+            
+            return CostLineItem(
+                cloud="azure",
+                service=service,
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=monthly_cost,
+                pricing_unit="hour",
+                assumptions=assumptions,
+                priced=True,
+                confidence=confidence
+            )
+        
+        except AzurePricingError as error:
+            logger.warning(f"Failed to price Azure resource {resource_name}: {error}")
+            return None
+    
+    async def estimate(
+        self,
+        intent_graph: Dict[str, Any],
+        region_override: Optional[str] = None,
+        autoscaling_average_override: Optional[int] = None
+    ) -> CostEstimate:
+        """
+        Estimate costs from intent graph.
+        
+        Args:
+            intent_graph: Intent graph from Terraform interpreter
+            region_override: Optional region override
+            autoscaling_average_override: Optional autoscaling average override
+        
+        Returns:
+            CostEstimate with line items and unpriced resources
+        
+        Raises:
+            CostEstimatorError: If estimation fails
+        """
+        resources = intent_graph.get("resources", [])
+        if not resources:
+            raise CostEstimatorError("Intent graph has no resources")
+        
+        line_items: List[CostLineItem] = []
+        unpriced_resources: List[UnpricedResource] = []
+        
+        for resource in resources:
+            cloud = resource.get("cloud", "unknown")
+            resource_name = resource.get("name", "unknown")
+            terraform_type = resource.get("terraform_type", "unknown")
+            region_info = resource.get("region", {})
+            count_model = resource.get("count_model", {})
+            
+            # Resolve region
+            resolved_region, region_assumptions = self._resolve_region(
+                region_info,
+                region_override
+            )
+            
+            # Resolve count
+            resolved_count, count_assumptions = self._resolve_count(
+                count_model,
+                autoscaling_average_override
+            )
+            
+            if resolved_count is None:
+                unpriced_resources.append(UnpricedResource(
+                    resource_name=resource_name,
+                    terraform_type=terraform_type,
+                    reason="Cannot resolve resource count"
+                ))
+                continue
+            
+            # Collect assumptions
+            assumptions = region_assumptions + count_assumptions
+            
+            # Price resource based on cloud provider
+            line_item = None
+            
+            if cloud == "aws":
+                line_item = await self._price_aws_resource(
+                    resource,
+                    resolved_region,
+                    resolved_count,
+                    assumptions
+                )
+            elif cloud == "azure":
+                line_item = await self._price_azure_resource(
+                    resource,
+                    resolved_region,
+                    resolved_count,
+                    assumptions
+                )
+            elif cloud == "gcp":
+                # GCP pricing not fully implemented
+                unpriced_resources.append(UnpricedResource(
+                    resource_name=resource_name,
+                    terraform_type=terraform_type,
+                    reason="GCP pricing not fully implemented"
+                ))
+                continue
+            else:
+                unpriced_resources.append(UnpricedResource(
+                    resource_name=resource_name,
+                    terraform_type=terraform_type,
+                    reason=f"Cloud provider '{cloud}' not supported for pricing"
+                ))
+                continue
+            
+            if line_item:
+                line_items.append(line_item)
+            else:
+                unpriced_resources.append(UnpricedResource(
+                    resource_name=resource_name,
+                    terraform_type=terraform_type,
+                    reason="Pricing not available for this resource type"
+                ))
+        
+        # Calculate total
+        total_monthly_cost = sum(item.monthly_cost_usd for item in line_items)
+        
+        # Use first priced resource's region, or default
+        region = line_items[0].region if line_items else (region_override or "us-east-1")
+        
+        return CostEstimate(
+            currency="USD",
+            total_monthly_cost_usd=total_monthly_cost,
+            line_items=line_items,
+            unpriced_resources=unpriced_resources,
+            region=region,
+            pricing_timestamp=datetime.now()
+        )

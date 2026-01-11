@@ -33,6 +33,11 @@ class Config:
     MISTRAL_TIMEOUT: int = 120  # 2 minutes for large Terraform files
     MISTRAL_MAX_TOKENS: int = 8192  # Maximum tokens for response
     
+    # Pricing Configuration
+    AWS_PRICING_REGION: str = os.getenv("AWS_PRICING_REGION", "us-east-1")
+    PRICING_CACHE_TTL_SECONDS: int = int(os.getenv("PRICING_CACHE_TTL_SECONDS", "86400"))  # 24 hours
+    HOURS_PER_MONTH: int = 730  # Standard assumption: 24/7 operation
+    
     @classmethod
     def validate(cls) -> None:
         """

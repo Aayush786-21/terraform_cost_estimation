@@ -8,6 +8,7 @@ import httpx
 
 from backend.services.github_client import GitHubClient
 from backend.services.terraform_interpreter import TerraformInterpreter, TerraformInterpreterError
+from backend.services.cost_estimator import CostEstimator, CostEstimatorError
 from backend.services.mistral_client import MistralAPIError
 from backend.utils.fs import extract_and_scan_terraform_files
 
@@ -31,6 +32,18 @@ class TerraformFile(BaseModel):
 class TerraformInterpretRequest(BaseModel):
     """Request model for interpreting Terraform files."""
     files: List[TerraformFile] = Field(..., description="List of Terraform files to interpret")
+
+
+class CostEstimateScenario(BaseModel):
+    """Scenario parameters for cost estimation."""
+    autoscaling_average_override: Optional[int] = Field(None, description="Override for autoscaling average count")
+
+
+class TerraformEstimateRequest(BaseModel):
+    """Request model for cost estimation."""
+    intent_graph: Dict[str, Any] = Field(..., description="Intent graph from Terraform interpretation")
+    region_override: Optional[str] = Field(None, description="Optional region override for pricing")
+    scenario: Optional[CostEstimateScenario] = Field(None, description="Optional scenario parameters")
 
 
 def get_access_token_from_session(request: Request) -> str:
@@ -234,4 +247,83 @@ async def interpret_terraform_files(
         raise HTTPException(
             status_code=500,
             detail="An unexpected error occurred while interpreting Terraform files"
+        ) from error
+
+
+@router.post("/api/terraform/estimate")
+async def estimate_terraform_costs(
+    request: Request,
+    estimate_request: TerraformEstimateRequest
+) -> Dict[str, Any]:
+    """
+    Estimate costs from Terraform intent graph.
+    
+    Uses official cloud pricing APIs (AWS, Azure, GCP) to calculate
+    monthly costs for resources in the intent graph.
+    
+    Requires authentication via GitHub OAuth.
+    
+    Args:
+        request: FastAPI request object
+        estimate_request: Request body with intent graph and optional overrides
+    
+    Returns:
+        JSON response with cost estimate and line items
+    
+    Raises:
+        HTTPException: If authentication fails, invalid input,
+                       pricing API fails, or other errors occur
+    """
+    try:
+        # Authenticate
+        get_access_token_from_session(request)
+        
+        # Validate input
+        intent_graph = estimate_request.intent_graph
+        if not intent_graph:
+            raise HTTPException(
+                status_code=400,
+                detail="Intent graph is required"
+            )
+        
+        if "resources" not in intent_graph:
+            raise HTTPException(
+                status_code=422,
+                detail="Intent graph must contain 'resources' field"
+            )
+        
+        # Extract scenario parameters
+        scenario = estimate_request.scenario
+        autoscaling_average_override = None
+        if scenario:
+            autoscaling_average_override = scenario.autoscaling_average_override
+        
+        # Initialize estimator and estimate costs
+        estimator = CostEstimator()
+        try:
+            cost_estimate = await estimator.estimate(
+                intent_graph=intent_graph,
+                region_override=estimate_request.region_override,
+                autoscaling_average_override=autoscaling_average_override
+            )
+        except CostEstimatorError as error:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to estimate costs: {str(error)}"
+            ) from error
+        
+        # Build response
+        return {
+            "status": "ok",
+            "estimate": cost_estimate.to_dict()
+        }
+    
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as error:
+        # Log error in production, but don't expose details to client
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred while estimating costs"
         ) from error
