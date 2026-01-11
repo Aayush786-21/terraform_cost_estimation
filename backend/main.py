@@ -10,6 +10,7 @@ from backend.core.config import config
 from backend.auth.github import router as auth_router
 from backend.api.repos import router as repos_router
 from backend.api.terraform import router as terraform_router
+from backend.middleware.rate_limiter import RateLimitMiddleware
 
 
 # Validate configuration on startup
@@ -32,6 +33,9 @@ app.add_middleware(
     same_site="lax",
     https_only=False,  # Set to True in production with HTTPS
 )
+
+# Add rate limiting middleware (after session middleware to access session)
+app.add_middleware(RateLimitMiddleware)
 
 # Include routers
 app.include_router(auth_router)
