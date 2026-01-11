@@ -1391,6 +1391,143 @@ async function apiRequest(url, options = {}) {
 }
 
 /**
+ * Check if explainer was dismissed in this session
+ */
+function isExplainerDismissed() {
+    return sessionStorage.getItem('explainer-dismissed') === 'true';
+}
+
+/**
+ * Mark explainer as dismissed
+ */
+function dismissExplainer() {
+    sessionStorage.setItem('explainer-dismissed', 'true');
+}
+
+/**
+ * Show explainer modal
+ */
+function showExplainer() {
+    const modal = document.getElementById('explainer-modal');
+    if (!modal) return;
+    
+    modal.style.display = 'flex';
+    
+    // Trap focus within modal
+    const focusableElements = modal.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    const firstFocusable = focusableElements[0];
+    const lastFocusable = focusableElements[focusableElements.length - 1];
+    
+    // Focus first element
+    if (firstFocusable) {
+        firstFocusable.focus();
+    }
+    
+    // Trap focus
+    const trapFocus = (e) => {
+        if (e.key === 'Tab') {
+            if (e.shiftKey) {
+                if (document.activeElement === firstFocusable) {
+                    e.preventDefault();
+                    lastFocusable.focus();
+                }
+            } else {
+                if (document.activeElement === lastFocusable) {
+                    e.preventDefault();
+                    firstFocusable.focus();
+                }
+            }
+        }
+        if (e.key === 'Escape') {
+            hideExplainer();
+        }
+    };
+    
+    modal.addEventListener('keydown', trapFocus);
+    modal.dataset.trapHandler = 'true';
+    
+    // Prevent body scroll
+    document.body.style.overflow = 'hidden';
+}
+
+/**
+ * Hide explainer modal
+ */
+function hideExplainer() {
+    const modal = document.getElementById('explainer-modal');
+    if (!modal) return;
+    
+    modal.style.display = 'none';
+    
+    // Remove focus trap handler if it exists
+    if (modal.dataset.trapHandler === 'true') {
+        const trapHandler = (e) => {
+            if (e.key === 'Escape' || e.key === 'Tab') {
+                modal.removeEventListener('keydown', trapHandler);
+            }
+        };
+        modal.removeEventListener('keydown', trapHandler);
+        delete modal.dataset.trapHandler;
+    }
+    
+    // Restore body scroll
+    document.body.style.overflow = '';
+}
+
+/**
+ * Initialize explainer
+ */
+function initExplainer() {
+    const modal = document.getElementById('explainer-modal');
+    const closeBtn = document.getElementById('explainer-close-btn');
+    const dismissBtn = document.getElementById('explainer-dismiss-btn');
+    const learnMoreLink = document.getElementById('learn-more-link');
+    const overlay = modal?.querySelector('.explainer-modal-overlay');
+    
+    if (!modal) return;
+    
+    // Close button handler
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            hideExplainer();
+        });
+    }
+    
+    // Dismiss button handler (marks as dismissed)
+    if (dismissBtn) {
+        dismissBtn.addEventListener('click', () => {
+            dismissExplainer();
+            hideExplainer();
+        });
+    }
+    
+    // Overlay click handler (close on outside click)
+    if (overlay) {
+        overlay.addEventListener('click', () => {
+            hideExplainer();
+        });
+    }
+    
+    // Learn more link handler
+    if (learnMoreLink) {
+        learnMoreLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            showExplainer();
+        });
+    }
+    
+    // Show explainer on first visit if not dismissed
+    if (!isExplainerDismissed()) {
+        // Small delay to let page render first
+        setTimeout(() => {
+            showExplainer();
+        }, 500);
+    }
+}
+
+/**
  * Initialize app
  */
 function init() {
@@ -1421,6 +1558,7 @@ function init() {
     initBreakdownToggle();
     initRegionDropdown();
     initResetButton();
+    initExplainer();
     
     // In the future, this could fetch from the API:
     // apiRequest('/api/terraform/estimate', { method: 'POST', ... })

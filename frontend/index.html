@@ -171,6 +171,82 @@
         </section>
     </div>
 
+    <!-- EXPLAINER MODAL -->
+    <div id="explainer-modal" class="explainer-modal" role="dialog" aria-labelledby="explainer-title" aria-modal="true" style="display: none;">
+        <div class="explainer-modal-overlay"></div>
+        <div class="explainer-modal-content">
+            <div class="explainer-header">
+                <h2 id="explainer-title" class="explainer-title">How This Estimate Works</h2>
+                <button class="explainer-close" aria-label="Close explainer" id="explainer-close-btn">
+                    <span aria-hidden="true">×</span>
+                </button>
+            </div>
+            <div class="explainer-body">
+                <div class="explainer-section">
+                    <h3 class="explainer-section-title">What is this estimate?</h3>
+                    <p class="explainer-section-content">
+                        This is an estimate of your infrastructure's monthly cost,
+                        based on configuration, assumptions, and public pricing data.
+                        It helps you understand potential costs before deployment.
+                    </p>
+                </div>
+
+                <div class="explainer-section">
+                    <h3 class="explainer-section-title">How are costs calculated?</h3>
+                    <p class="explainer-section-content">
+                        Your Terraform configuration is analyzed to identify resources.
+                        We use official cloud provider pricing APIs to look up current rates.
+                        Region and instance specifications matter—different locations have different prices.
+                        For autoscaling resources, we use average instance counts, not peak usage.
+                    </p>
+                </div>
+
+                <div class="explainer-section">
+                    <h3 class="explainer-section-title">What assumptions are involved?</h3>
+                    <p class="explainer-section-content">
+                        Some values are inferred when not explicitly specified.
+                        Autoscaling, usage patterns, and traffic levels are estimated based on typical workloads.
+                        Confidence indicators show how certain we are about each cost item.
+                        Uncertainty is normal—real infrastructure costs vary with usage.
+                    </p>
+                </div>
+
+                <div class="explainer-section">
+                    <h3 class="explainer-section-title">What happens when I change a scenario?</h3>
+                    <p class="explainer-section-content">
+                        Your base estimate never changes—it remains visible for comparison.
+                        Scenarios show "what-if" comparisons side by side.
+                        Deltas highlight the differences clearly with + or - indicators.
+                        Nothing is applied automatically—scenarios are exploratory only.
+                    </p>
+                </div>
+
+                <div class="explainer-section">
+                    <h3 class="explainer-section-title">What this is not</h3>
+                    <p class="explainer-section-content">
+                        This is <strong>not</strong> an official cloud provider bill.
+                        It is <strong>not</strong> a commitment or binding estimate.
+                        It is <strong>not</strong> an optimization tool that makes changes automatically.
+                        Actual costs may vary based on real usage, discounts, and provider-specific factors.
+                    </p>
+                </div>
+
+                <div class="explainer-section">
+                    <h3 class="explainer-section-title">How should I use this?</h3>
+                    <p class="explainer-section-content">
+                        Use this for early planning and design decisions.
+                        Compare scenarios to understand cost trade-offs.
+                        Build cost awareness before deployment.
+                        Share estimates with your team for informed discussions.
+                    </p>
+                </div>
+            </div>
+            <div class="explainer-footer">
+                <button class="explainer-dismiss-btn" id="explainer-dismiss-btn">Got it</button>
+            </div>
+        </div>
+    </div>
+
     <!-- SECTION E: FOOTER (Grounding) -->
     <footer class="disclaimer-footer">
         <p>
@@ -178,6 +254,9 @@
             assumptions, and publicly available pricing information.
             It is NOT an official cloud provider bill.
             Actual costs may vary.
+        </p>
+        <p class="footer-learn-more">
+            <a href="#" id="learn-more-link" class="learn-more-link">Learn more about how this estimate works</a>
         </p>
     </footer>
 
