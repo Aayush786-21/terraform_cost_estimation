@@ -120,12 +120,22 @@ body {
     line-height: 1.6;
 }
 
+.scenario-delta-badge {
+    display: block;
+    margin-top: var(--space-xs);
+    font-size: 0.875rem;
+}
+
 .hero-meta {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: var(--space-md);
     align-items: center;
+}
+
+.region-container {
+    position: relative;
 }
 
 .region-pill {
@@ -137,6 +147,12 @@ body {
     border-radius: var(--radius-full);
     backdrop-filter: blur(10px);
     font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.region-pill:hover {
+    background: rgba(255, 255, 255, 0.25);
 }
 
 .region-label {
@@ -145,6 +161,192 @@ body {
 
 .region-value {
     font-weight: 600;
+}
+
+.region-chevron {
+    font-size: 0.75rem;
+    opacity: 0.8;
+    transition: transform 0.2s ease;
+}
+
+.region-pill.active .region-chevron {
+    transform: rotate(180deg);
+}
+
+.region-dropdown {
+    position: absolute;
+    top: calc(100% + var(--space-sm));
+    left: 0;
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(20px);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    min-width: 280px;
+    box-shadow: var(--shadow-lg);
+    z-index: 100;
+    color: var(--text-primary);
+}
+
+.region-dropdown-header {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-sm);
+}
+
+.region-options {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-md);
+}
+
+.region-option {
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.9rem;
+}
+
+.region-option:hover {
+    background: var(--color-neutral-lightest);
+}
+
+.region-option.selected {
+    background: rgba(99, 102, 241, 0.1);
+    color: var(--color-primary);
+    font-weight: 500;
+}
+
+.compare-button {
+    width: 100%;
+    padding: var(--space-sm) var(--space-md);
+    background: var(--color-primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.compare-button:hover {
+    background: var(--color-primary-dark);
+}
+
+.traffic-assumptions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    min-width: 200px;
+}
+
+.traffic-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.traffic-input {
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 0.9rem;
+    backdrop-filter: blur(10px);
+    transition: all 0.2s ease;
+}
+
+.traffic-input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.traffic-input:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.4);
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.traffic-helper {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+/* SCENARIO BANNER */
+.scenario-banner {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+    border: 2px solid var(--color-primary-light);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    margin-bottom: var(--space-xl);
+    box-shadow: var(--shadow-md);
+}
+
+.scenario-banner-content {
+    max-width: 100%;
+}
+
+.scenario-banner-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-sm);
+    flex-wrap: wrap;
+    gap: var(--space-md);
+}
+
+.scenario-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-xs) var(--space-md);
+    background: var(--color-primary);
+    color: white;
+    border-radius: var(--radius-full);
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.reset-button {
+    padding: var(--space-xs) var(--space-md);
+    background: white;
+    color: var(--color-primary);
+    border: 1px solid var(--color-primary);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.reset-button:hover {
+    background: var(--color-primary);
+    color: white;
+}
+
+.scenario-assumptions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.scenario-assumption {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.scenario-assumption:before {
+    content: "•";
+    color: var(--color-primary);
+    font-weight: bold;
 }
 
 /* SECTION B: COST DRIVERS */
@@ -249,6 +451,178 @@ body {
     margin-top: var(--space-sm);
     padding-top: var(--space-sm);
     border-top: 1px solid var(--color-neutral-lighter);
+}
+
+/* Autoscaling controls in cost driver cards */
+.autoscaling-control {
+    margin-top: var(--space-md);
+    padding-top: var(--space-md);
+    border-top: 1px solid var(--color-neutral-lighter);
+}
+
+.autoscaling-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-xs);
+    display: block;
+}
+
+.autoscaling-input-group {
+    display: flex;
+    gap: var(--space-sm);
+    align-items: center;
+}
+
+.autoscaling-input {
+    flex: 1;
+    padding: var(--space-xs) var(--space-sm);
+    border: 1px solid var(--color-neutral-lighter);
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
+    transition: all 0.2s ease;
+}
+
+.autoscaling-input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.autoscaling-helper {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    margin-top: var(--space-xs);
+}
+
+.apply-scenario-btn {
+    padding: var(--space-xs) var(--space-md);
+    background: var(--color-primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-top: var(--space-sm);
+    width: 100%;
+}
+
+.apply-scenario-btn:hover {
+    background: var(--color-primary-dark);
+}
+
+.apply-scenario-btn:disabled {
+    background: var(--color-neutral-lighter);
+    color: var(--color-neutral);
+    cursor: not-allowed;
+}
+
+/* Delta indicators */
+.delta-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: 2px var(--space-xs);
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
+}
+
+.delta-indicator.positive {
+    background: rgba(239, 68, 68, 0.1);
+    color: #dc2626;
+}
+
+.delta-indicator.negative {
+    background: rgba(16, 185, 129, 0.1);
+    color: #059669;
+}
+
+.delta-indicator.neutral {
+    background: var(--color-neutral-lightest);
+    color: var(--color-neutral);
+}
+
+.delta-indicator.small {
+    font-size: 0.7rem;
+    padding: 1px 4px;
+}
+
+/* Scenario comparison section */
+.scenario-comparison-section {
+    background: white;
+    border-radius: var(--radius-lg);
+    padding: var(--space-xl);
+    margin-bottom: var(--space-2xl);
+    box-shadow: var(--shadow-md);
+}
+
+.comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: var(--space-xl);
+    margin-top: var(--space-lg);
+}
+
+.comparison-card {
+    background: var(--color-neutral-lightest);
+    border-radius: var(--radius-md);
+    padding: var(--space-xl);
+    border: 2px solid var(--color-neutral-lighter);
+}
+
+.comparison-card.base-estimate {
+    border-color: var(--color-neutral);
+}
+
+.comparison-card.scenario-estimate {
+    border-color: var(--color-primary-light);
+    background: rgba(99, 102, 241, 0.05);
+}
+
+.comparison-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--space-md);
+}
+
+.comparison-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.comparison-cost {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
+}
+
+.comparison-region {
+    font-size: 0.9rem;
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-sm);
+}
+
+.comparison-delta {
+    margin-top: var(--space-md);
+    padding-top: var(--space-md);
+    border-top: 1px solid var(--color-neutral-lighter);
+}
+
+.delta-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-xs);
 }
 
 /* SECTION C: DETAILED BREAKDOWN */
@@ -774,6 +1148,25 @@ body {
     max-width: 800px;
     margin-left: auto;
     margin-right: auto;
+}
+
+/* Additional responsive styles for scenario components */
+.scenario-banner-header {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.comparison-grid {
+    grid-template-columns: 1fr;
+}
+
+.hero-meta {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.traffic-assumptions {
+    width: 100%;
 }
 
 /* Responsive Design */

@@ -20,13 +20,50 @@
                     Based on your infrastructure configuration and pricing assumptions
                 </p>
                 <div class="hero-meta">
-                    <div class="region-pill">
-                        <span class="region-label">Region:</span>
-                        <span id="region" class="region-value">-</span>
+                    <div class="region-container">
+                        <div class="region-pill" id="region-pill">
+                            <span class="region-label">Region:</span>
+                            <span id="region" class="region-value">-</span>
+                            <span class="region-chevron">▼</span>
+                        </div>
+                        <div id="region-dropdown" class="region-dropdown" style="display: none;">
+                            <div class="region-dropdown-header">Compare with region:</div>
+                            <div class="region-options" id="region-options">
+                                <!-- Region options rendered here -->
+                            </div>
+                            <button id="compare-region-btn" class="compare-button" style="display: none;">
+                                Compare with <span id="selected-region-name"></span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="traffic-assumptions">
+                        <label for="users-input" class="traffic-label">Traffic Assumptions (Optional)</label>
+                        <input 
+                            type="number" 
+                            id="users-input" 
+                            name="users-input" 
+                            placeholder="Average users/month"
+                            min="0"
+                            class="traffic-input"
+                        />
+                        <span class="traffic-helper">Only affects request-based services when applicable</span>
                     </div>
                     <div class="coverage-badges" id="coverage-badges">
                         <!-- Coverage badges rendered here -->
                     </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SCENARIO RESULT BANNER -->
+        <section id="scenario-banner" class="scenario-banner" style="display: none;">
+            <div class="scenario-banner-content">
+                <div class="scenario-banner-header">
+                    <span class="scenario-label">Scenario Active</span>
+                    <button id="reset-scenario-btn" class="reset-button">Reset to Base Estimate</button>
+                </div>
+                <div class="scenario-assumptions" id="scenario-assumptions">
+                    <!-- Scenario assumptions rendered here -->
                 </div>
             </div>
         </section>
@@ -82,7 +119,31 @@
             </div>
         </section>
 
-        <!-- SECTION D: INSIGHTS (Advisory Tone) -->
+        <!-- SECTION D: SCENARIO COMPARISON -->
+        <section id="scenario-comparison-section" class="scenario-comparison-section" style="display: none;">
+            <h2 class="section-title">Scenario Comparison</h2>
+            <div class="comparison-grid">
+                <div class="comparison-card base-estimate">
+                    <div class="comparison-card-header">
+                        <span class="comparison-label">Base Estimate</span>
+                        <span id="base-cost" class="comparison-cost">$0.00</span>
+                    </div>
+                    <div class="comparison-region" id="base-region">-</div>
+                </div>
+                <div class="comparison-card scenario-estimate">
+                    <div class="comparison-card-header">
+                        <span class="comparison-label">Scenario Estimate</span>
+                        <span id="scenario-cost" class="comparison-cost">$0.00</span>
+                    </div>
+                    <div class="comparison-region" id="scenario-region">-</div>
+                    <div id="scenario-delta" class="comparison-delta">
+                        <!-- Delta displayed here -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION E: INSIGHTS (Advisory Tone) -->
         <section class="insights-section">
             <h2 class="section-title">Cost Insights & Suggestions</h2>
             <p class="section-description">Advisory insights to help optimize your infrastructure costs</p>
