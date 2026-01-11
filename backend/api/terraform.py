@@ -67,6 +67,8 @@ def get_access_token_from_session(request: Request) -> str:
     """
     Extract GitHub access token from session.
     
+    Validates session expiry and extends idle timeout if valid.
+    
     Args:
         request: FastAPI request object
     
@@ -74,13 +76,15 @@ def get_access_token_from_session(request: Request) -> str:
         GitHub access token string
     
     Raises:
-        HTTPException: If user is not authenticated
+        HTTPException: If session is missing, expired, or token is not found
     """
-    token = request.session.get("github_access_token")
+    from backend.auth.session_utils import get_access_token_from_session as get_token
+    session = request.session
+    token = get_token(session)
     if not token:
         raise HTTPException(
             status_code=401,
-            detail="Not authenticated. Please sign in with GitHub."
+            detail="Session expired. Please sign in again."
         )
     return token
 

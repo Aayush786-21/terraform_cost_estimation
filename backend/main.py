@@ -27,10 +27,12 @@ app = FastAPI(
 )
 
 # Add session middleware with secure settings
+# Note: max_age is set to 8 hours (28800 seconds) to match absolute session lifetime
+# Actual expiry is enforced in session_utils.py for finer control (idle timeout, etc.)
 app.add_middleware(
     SessionMiddleware,
     secret_key=config.SESSION_SECRET,
-    max_age=config.SESSION_MAX_AGE,
+    max_age=28800,  # 8 hours (matches ABSOLUTE_SESSION_LIFETIME)
     same_site="lax",
     https_only=False,  # Set to True in production with HTTPS
 )

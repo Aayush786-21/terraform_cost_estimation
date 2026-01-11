@@ -1,10 +1,10 @@
 """
 GitHub OAuth authentication routes.
-Handles OAuth flow: login redirect and callback processing.
+Handles login, callback, logout, and session management.
 """
 import secrets
 from urllib.parse import urlencode
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, Request, HTTPException, Query
 from fastapi.responses import RedirectResponse
@@ -12,6 +12,7 @@ import httpx
 
 from backend.core.config import config
 from backend.services.github_client import GitHubClient
+from backend.auth.session_utils import initialize_session, clear_session
 
 
 router = APIRouter()
@@ -87,8 +88,8 @@ async def github_callback(
         # Exchange code for access token
         access_token = await GitHubClient.exchange_code_for_token(code)
         
-        # Store token in session (secure, httpOnly cookie via SessionMiddleware)
-        request.session["github_access_token"] = access_token
+        # Initialize session with access token and timestamps
+        initialize_session(request.session, access_token)
         
         return RedirectResponse(url="/")
     
@@ -112,3 +113,20 @@ async def github_callback(
             status_code=500,
             detail=f"Unexpected error during authentication: {str(error)}"
         )
+
+
+@router.post("/auth/logout")
+async def logout(request: Request) -> Dict[str, Any]:
+    """
+    Logout endpoint.
+    
+    Clears session data and invalidates authentication.
+    
+    Returns:
+        JSON response confirming logout
+    """
+    clear_session(request.session)
+    return {
+        "status": "ok",
+        "message": "Logged out successfully"
+    }
