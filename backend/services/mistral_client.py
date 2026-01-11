@@ -5,8 +5,10 @@ Handles all interactions with Mistral AI API.
 from typing import Dict, Any, List
 import httpx
 import json
+import asyncio
 
 from backend.core.config import config
+from backend.resilience.circuit_breaker import get_circuit_breaker
 
 
 class MistralAPIError(Exception):
@@ -27,8 +29,11 @@ class MistralClient:
         self.api_key = api_key or config.MISTRAL_API_KEY
         self.base_url = config.MISTRAL_API_BASE_URL
         self.model = config.MISTRAL_MODEL
-        self.timeout = config.MISTRAL_TIMEOUT
+        self.timeout = 30  # 30 seconds timeout for AI requests
         self.max_tokens = config.MISTRAL_MAX_TOKENS
+        self.retries = 3  # Number of retries for transient errors
+        self.backoff_factor = 0.5  # For exponential backoff
+        self.circuit_breaker = get_circuit_breaker("mistral")
     
     async def chat_completion(
         self,
@@ -73,35 +78,63 @@ class MistralClient:
         if self.max_tokens:
             payload["max_tokens"] = self.max_tokens
         
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    url,
-                    headers=headers,
-                    json=payload,
-                    timeout=self.timeout,
-                )
-                response.raise_for_status()
-                return response.json()
+        # Check circuit breaker
+        if not self.circuit_breaker.allow_request():
+            raise MistralAPIError(
+                "Service temporarily unavailable (circuit breaker open)"
+            )
         
-        except httpx.HTTPStatusError as error:
-            error_detail = "Unknown error"
+        for attempt in range(self.retries):
             try:
-                error_response = error.response.json()
-                error_detail = error_response.get("error", {}).get("message", str(error))
-            except (json.JSONDecodeError, AttributeError):
-                error_detail = error.response.text or str(error)
-            
-            raise MistralAPIError(
-                f"Mistral API request failed: {error_detail} (status: {error.response.status_code})"
-            ) from error
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        url,
+                        headers=headers,
+                        json=payload,
+                        timeout=self.timeout,
+                    )
+                    response.raise_for_status()
+                    result = response.json()
+                    self.circuit_breaker.record_success()
+                    return result
+
+            except httpx.HTTPStatusError as error:
+                error_detail = "Unknown error"
+                try:
+                    error_response = error.response.json()
+                    error_detail = error_response.get("error", {}).get("message", str(error))
+                except (json.JSONDecodeError, AttributeError):
+                    error_detail = error.response.text or str(error)
+                
+                if error.response.status_code in [429, 500, 502, 503, 504] and attempt < self.retries - 1:
+                    retry_after = error.response.headers.get("Retry-After")
+                    if retry_after:
+                        await asyncio.sleep(int(retry_after))
+                    else:
+                        await asyncio.sleep(self.backoff_factor * (2 ** attempt))
+                    continue  # Retry
+                # Record failure and raise
+                self.circuit_breaker.record_failure()
+                raise MistralAPIError(
+                    f"Mistral API request failed: {error_detail} (status: {error.response.status_code})"
+                ) from error
+
+            except httpx.TimeoutException as error:
+                # Record failure for timeout
+                self.circuit_breaker.record_failure()
+                if attempt < self.retries - 1:
+                    await asyncio.sleep(self.backoff_factor * (2 ** attempt))
+                    continue  # Retry
+                raise MistralAPIError(f"Mistral API request timed out: {str(error)}") from error
+
+            except httpx.RequestError as error:
+                # Record failure for network error
+                self.circuit_breaker.record_failure()
+                if attempt < self.retries - 1:
+                    await asyncio.sleep(self.backoff_factor * (2 ** attempt))
+                    continue  # Retry
+                raise MistralAPIError(f"Failed to connect to Mistral API: {str(error)}") from error
         
-        except httpx.TimeoutException as error:
-            raise MistralAPIError(
-                f"Mistral API request timed out after {self.timeout}s"
-            ) from error
-        
-        except httpx.RequestError as error:
-            raise MistralAPIError(
-                f"Failed to connect to Mistral API: {str(error)}"
-            ) from error
+        # All retries exhausted
+        self.circuit_breaker.record_failure()
+        raise MistralAPIError("Unknown error after multiple retries with Mistral API")

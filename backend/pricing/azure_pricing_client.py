@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import httpx
 
 from backend.core.config import config
+from backend.resilience.circuit_breaker import get_circuit_breaker
 
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,8 @@ class AzurePricingClient:
     def __init__(self):
         """Initialize Azure pricing client."""
         self.cache_ttl = timedelta(seconds=config.PRICING_CACHE_TTL_SECONDS)
+        self.timeout = 10.0  # 10 seconds timeout for Azure pricing API
+        self.circuit_breaker = get_circuit_breaker("azure_pricing")
     
     def _get_cache_key(self, arm_region: str, service_family: str, sku_name: str) -> str:
         """Generate cache key."""
@@ -86,11 +89,15 @@ class AzurePricingClient:
         if cached_price is not None:
             return cached_price
         
+        # Check circuit breaker
+        if not self.circuit_breaker.allow_request():
+            return None  # Fail silently, circuit breaker open
+        
         try:
             normalized_region = self._normalize_region(region)
             
             # Query Azure Retail Prices API
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient() as client:
                 response = await client.get(
                     self.API_BASE_URL,
                     params={
@@ -99,7 +106,8 @@ class AzurePricingClient:
                                  f"and skuName eq '{sku_name}' "
                                  f"and priceType eq 'Consumption' "
                                  f"and contains(productName, 'Virtual Machines')"
-                    }
+                    },
+                    timeout=self.timeout
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -113,16 +121,25 @@ class AzurePricingClient:
                         if unit_price:
                             hourly_price = float(unit_price)
                             self._cache_price(cache_key, hourly_price)
+                            self.circuit_breaker.record_success()
                             return hourly_price
                 
+                self.circuit_breaker.record_success()  # Not found is not a failure
                 return None
         
         except httpx.HTTPStatusError as error:
+            self.circuit_breaker.record_failure()
             logger.error(f"Azure pricing API HTTP error: {error}")
             raise AzurePricingError(f"Failed to query Azure pricing: {error.response.status_code}") from error
         except httpx.RequestError as error:
+            self.circuit_breaker.record_failure()
             logger.error(f"Azure pricing API request error: {error}")
             raise AzurePricingError(f"Failed to connect to Azure pricing API: {str(error)}") from error
         except (ValueError, KeyError) as error:
+            self.circuit_breaker.record_failure()
             logger.error(f"Error parsing Azure pricing response: {error}")
             return None
+        except Exception as error:
+            self.circuit_breaker.record_failure()
+            logger.error(f"Unexpected error in Azure pricing: {error}")
+            raise AzurePricingError(f"Unexpected error in Azure pricing: {str(error)}") from error

@@ -4,16 +4,20 @@ Uses boto3 to query official AWS Price List API.
 """
 from typing import Dict, Any, Optional, Tuple
 import logging
+import hashlib
 from datetime import datetime, timedelta
 
 try:
     import boto3
     from botocore.exceptions import ClientError, BotoCoreError
+    from botocore.config import Config
 except ImportError:
     boto3 = None
+    Config = None
 
 from backend.core.config import config
 from backend.pricing.aws_region_map import get_aws_pricing_location
+from backend.resilience.circuit_breaker import get_circuit_breaker
 
 
 logger = logging.getLogger(__name__)
@@ -36,8 +40,19 @@ class AWSPricingClient:
             raise AWSPricingError(
                 "boto3 is required for AWS pricing. Install with: pip install boto3"
             )
-        self.pricing_client = boto3.client('pricing', region_name=config.AWS_PRICING_REGION)
+        # Configure timeout: 10 seconds for pricing API calls
+        boto_config = Config(
+            connect_timeout=10,
+            read_timeout=10,
+            retries={'max_attempts': 0}  # No retries, circuit breaker handles failures
+        )
+        self.pricing_client = boto3.client(
+            'pricing',
+            region_name=config.AWS_PRICING_REGION,
+            config=boto_config
+        )
         self.cache_ttl = timedelta(seconds=config.PRICING_CACHE_TTL_SECONDS)
+        self.circuit_breaker = get_circuit_breaker("aws_pricing")
     
     def _get_cache_key(
         self, 
@@ -97,24 +112,31 @@ class AWSPricingClient:
     ) -> Optional[float]:
         """
         Get hourly price for EC2 instance.
-        
+
         Args:
             instance_type: EC2 instance type (e.g., 't3.micro')
             region: AWS region (e.g., 'us-east-1')
             operating_system: OS type (default: 'Linux')
-        
+
         Returns:
             Hourly price in USD, or None if not found
-        
+
         Raises:
             AWSPricingError: If API call fails
         """
+        # Check circuit breaker
+        if not self.circuit_breaker.allow_request():
+            raise AWSPricingError(
+                "AWS pricing service temporarily unavailable (circuit breaker open)"
+            )
+        
         try:
             # Normalize region for pricing API
             region_code, pricing_location = self._normalize_region(region)
             
             if pricing_location is None:
                 logger.warning(f"AWS region code '{region}' not found in region map")
+                self.circuit_breaker.record_success()  # Not found is not a failure
                 return None
             
             # Build filter hash for cache key (includes OS, tenancy, capacity status)
@@ -155,16 +177,23 @@ class AWSPricingClient:
                         if price_per_unit:
                             hourly_price = float(price_per_unit)
                             self._cache_price(cache_key_with_filters, hourly_price)
+                            self.circuit_breaker.record_success()
                             return hourly_price
             
+            self.circuit_breaker.record_success()  # Not found is not a failure
             return None
-        
+
         except ClientError as error:
+            self.circuit_breaker.record_failure()
             logger.error(f"AWS pricing API error: {error}")
             raise AWSPricingError(f"Failed to query AWS pricing: {str(error)}") from error
         except (BotoCoreError, ValueError, KeyError) as error:
+            self.circuit_breaker.record_failure()
             logger.error(f"Error parsing AWS pricing response: {error}")
             raise AWSPricingError(f"Failed to parse AWS pricing response: {str(error)}") from error
+        except Exception as error:
+            self.circuit_breaker.record_failure()
+            raise AWSPricingError(f"Unexpected error querying AWS pricing: {str(error)}") from error
     
     async def get_rds_instance_price(
         self,
@@ -174,24 +203,29 @@ class AWSPricingClient:
     ) -> Optional[float]:
         """
         Get hourly price for RDS instance.
-        
+
         Args:
             instance_type: RDS instance type (e.g., 'db.t3.micro')
             region: AWS region
             engine: Database engine (default: 'mysql')
-        
+
         Returns:
             Hourly price in USD, or None if not found
-        
+
         Raises:
             AWSPricingError: If API call fails
         """
+        # Check circuit breaker
+        if not self.circuit_breaker.allow_request():
+            return None  # Fail silently, circuit breaker open
+        
         try:
             # Normalize region for pricing API
             region_code, pricing_location = self._normalize_region(region)
             
             if pricing_location is None:
                 logger.warning(f"AWS region code '{region}' not found in region map")
+                self.circuit_breaker.record_success()  # Not found is not a failure
                 return None
             
             # Build filter hash for cache key
@@ -227,11 +261,18 @@ class AWSPricingClient:
                         if price_per_unit:
                             hourly_price = float(price_per_unit)
                             self._cache_price(cache_key_with_filters, hourly_price)
+                            self.circuit_breaker.record_success()
                             return hourly_price
             
+            self.circuit_breaker.record_success()  # Not found is not a failure
             return None
-        
+
         except (ClientError, BotoCoreError, ValueError, KeyError) as error:
+            self.circuit_breaker.record_failure()
             logger.error(f"Error querying RDS pricing: {error}")
             # Don't raise, return None to indicate pricing not found
+            return None
+        except Exception as error:
+            self.circuit_breaker.record_failure()
+            logger.error(f"Unexpected error querying RDS pricing: {error}")
             return None

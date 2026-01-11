@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import httpx
 
 from backend.core.config import config
+from backend.resilience.circuit_breaker import get_circuit_breaker
 
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,9 @@ class GCPPricingClient:
     def __init__(self):
         """Initialize GCP pricing client."""
         self.cache_ttl = timedelta(seconds=config.PRICING_CACHE_TTL_SECONDS)
+        self.timeout = 10.0  # 10 seconds timeout for GCP pricing API (when implemented)
+        self.circuit_breaker = get_circuit_breaker("gcp_pricing")
+        logger.info("GCP Pricing Client initialized as a placeholder. Pricing not yet implemented.")
     
     def _get_cache_key(self, service_id: str, sku_id: str, region: str) -> str:
         """Generate cache key."""
@@ -71,10 +75,11 @@ class GCPPricingClient:
         Raises:
             GCPPricingError: If API call fails (when implemented)
         """
-        # Placeholder: GCP pricing not fully implemented
-        # Would require:
-        # 1. Service account credentials
-        # 2. google-cloud-billing library
-        # 3. Complex SKU mapping (machine types map to specific SKUs)
-        logger.warning("GCP pricing lookup not fully implemented")
-        return None
+        # Check circuit breaker (even though not implemented yet)
+        if not self.circuit_breaker.allow_request():
+            return None
+        
+        logger.info(f"Attempted to get GCP price for {machine_type} in {region}. Pricing not implemented.")
+        # Record success since this is expected behavior (not implemented)
+        self.circuit_breaker.record_success()
+        return None  # Placeholder: pricing not implemented yet
