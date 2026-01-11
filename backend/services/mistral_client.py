@@ -23,9 +23,14 @@ class MistralClient:
         """
         Initialize Mistral client with API key.
         
+        Priority:
+        1. Provided api_key parameter
+        2. Server-side config.MISTRAL_API_KEY (fallback, dev only)
+        
         Args:
-            api_key: Mistral API key (defaults to config value)
+            api_key: Mistral API key (optional, defaults to config value)
         """
+        # Use provided key, or fall back to server key
         self.api_key = api_key or config.MISTRAL_API_KEY
         self.base_url = config.MISTRAL_API_BASE_URL
         self.model = config.MISTRAL_MODEL
@@ -58,7 +63,7 @@ class MistralClient:
             httpx.TimeoutException: If request times out
         """
         if not self.api_key:
-            raise MistralAPIError("Mistral API key is not configured")
+            raise MistralAPIError("AI API key required. Please provide your own key.")
         
         url = f"{self.base_url}/chat/completions"
         headers = {

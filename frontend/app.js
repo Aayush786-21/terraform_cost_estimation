@@ -317,6 +317,38 @@ function renderEstimate(estimateData) {
 }
 
 /**
+ * Get AI API key from input field
+ * Never stored, never logged, only read when needed
+ */
+function getAIAPIKey() {
+    const input = document.getElementById('ai-api-key');
+    if (!input) return null;
+    const key = input.value.trim();
+    return key || null;
+}
+
+/**
+ * Make API request with optional AI key header
+ */
+async function apiRequest(url, options = {}) {
+    const headers = options.headers || {};
+    
+    // Add AI API key header if provided (only for AI endpoints)
+    const aiKey = getAIAPIKey();
+    if (aiKey && (url.includes('/interpret') || url.includes('/insights'))) {
+        headers['X-AI-API-Key'] = aiKey;
+    }
+    
+    return fetch(url, {
+        ...options,
+        headers: {
+            ...headers,
+            'Content-Type': 'application/json'
+        }
+    });
+}
+
+/**
  * Initialize app
  */
 function init() {
@@ -324,7 +356,7 @@ function init() {
     renderEstimate(SAMPLE_ESTIMATE);
     
     // In the future, this could fetch from the API:
-    // fetch('/api/terraform/estimate', { method: 'POST', ... })
+    // apiRequest('/api/terraform/estimate', { method: 'POST', ... })
     //   .then(res => res.json())
     //   .then(data => renderEstimate(data));
 }

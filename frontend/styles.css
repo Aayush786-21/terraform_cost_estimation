@@ -64,6 +64,22 @@ header h1 {
     letter-spacing: 0.5px;
 }
 
+.total-cost-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.estimate-badge {
+    font-size: 0.75rem;
+    color: #6b7280;
+    font-weight: normal;
+    text-transform: none;
+    letter-spacing: 0;
+    font-style: italic;
+}
+
 .total-cost .amount {
     font-size: 3rem;
     font-weight: bold;
@@ -353,6 +369,74 @@ header h1 {
     margin-top: 5px;
 }
 
+/* AI Key Section */
+.ai-key-section {
+    background: white;
+    border-radius: 8px;
+    padding: 30px;
+    margin-bottom: 30px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.ai-key-section h2 {
+    font-size: 1.5rem;
+    margin-bottom: 20px;
+    color: #1a1a1a;
+}
+
+.ai-key-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ai-key-input-group label {
+    font-weight: 600;
+    color: #374151;
+    font-size: 0.9rem;
+}
+
+.ai-key-input-group input[type="password"] {
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-family: 'Courier New', monospace;
+    background-color: #ffffff;
+    color: #1a1a1a;
+}
+
+.ai-key-input-group input[type="password"]:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.ai-key-helper {
+    font-size: 0.85rem;
+    color: #6b7280;
+    margin: 0;
+}
+
+/* Footer Disclaimer */
+.disclaimer-footer {
+    background-color: #f9fafb;
+    border-top: 1px solid #e5e7eb;
+    padding: 20px;
+    margin-top: 40px;
+    text-align: center;
+}
+
+.disclaimer-footer p {
+    color: #6b7280;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    margin: 0;
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .summary-content {
@@ -365,6 +449,11 @@ header h1 {
 
     .total-cost .amount {
         font-size: 2rem;
+    }
+
+    .total-cost-header {
+        flex-direction: column;
+        align-items: flex-start;
     }
 
     .cost-table {

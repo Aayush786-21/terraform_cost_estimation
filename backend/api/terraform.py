@@ -10,7 +10,7 @@ from backend.services.github_client import GitHubClient
 from backend.services.terraform_interpreter import TerraformInterpreter, TerraformInterpreterError
 from backend.services.cost_estimator import CostEstimator, CostEstimatorError
 from backend.services.cost_insights import CostInsightsService, CostInsightsError
-from backend.services.mistral_client import MistralAPIError
+from backend.services.mistral_client import MistralClient, MistralAPIError
 from backend.domain.scenario_models import ScenarioInput
 from backend.domain.cost_models import CostEstimate
 from backend.domain.scenario_models import ScenarioEstimateResult
@@ -222,6 +222,9 @@ async def interpret_terraform_files(
         # Authenticate
         get_access_token_from_session(request)
         
+        # Extract optional AI API key from header (never logged)
+        ai_api_key = request.headers.get("X-AI-API-Key")
+        
         # Validate input
         if not interpret_request.files:
             raise HTTPException(
@@ -235,8 +238,9 @@ async def interpret_terraform_files(
             for file in interpret_request.files
         ]
         
-        # Initialize interpreter and interpret
-        interpreter = TerraformInterpreter()
+        # Initialize interpreter with user-provided AI key (or None for server fallback)
+        mistral_client = MistralClient(api_key=ai_api_key) if ai_api_key else None
+        interpreter = TerraformInterpreter(mistral_client=mistral_client)
         try:
             intent_graph = await interpreter.interpret(terraform_files)
         except TerraformInterpreterError as error:
@@ -245,6 +249,13 @@ async def interpret_terraform_files(
                 detail=f"Failed to interpret Terraform files: {str(error)}"
             ) from error
         except MistralAPIError as error:
+            # Check if error is related to missing/invalid API key
+            error_msg = str(error).lower()
+            if "key" in error_msg or "unauthorized" in error_msg or "401" in error_msg or "403" in error_msg:
+                raise HTTPException(
+                    status_code=401,
+                    detail="AI provider rejected the provided API key."
+                ) from error
             raise HTTPException(
                 status_code=502,
                 detail="Mistral AI service unavailable"
@@ -498,6 +509,9 @@ async def generate_cost_insights(
         # Authenticate
         get_access_token_from_session(request)
         
+        # Extract optional AI API key from header (never logged)
+        ai_api_key = request.headers.get("X-AI-API-Key")
+        
         # Validate input
         intent_graph = insights_request.intent_graph
         if not intent_graph:
@@ -518,8 +532,9 @@ async def generate_cost_insights(
         if insights_request.scenario_result:
             scenario_result = insights_request.scenario_result
         
-        # Generate insights using dict-based method
-        insights_service = CostInsightsService()
+        # Initialize insights service with user-provided AI key (or None for server fallback)
+        mistral_client = MistralClient(api_key=ai_api_key) if ai_api_key else None
+        insights_service = CostInsightsService(mistral_client=mistral_client)
         try:
             insight_response = await insights_service.generate_insights_from_dicts(
                 intent_graph=intent_graph,
@@ -532,6 +547,13 @@ async def generate_cost_insights(
                 detail=f"Failed to generate insights: {str(error)}"
             ) from error
         except MistralAPIError as error:
+            # Check if error is related to missing/invalid API key
+            error_msg = str(error).lower()
+            if "key" in error_msg or "unauthorized" in error_msg or "401" in error_msg or "403" in error_msg:
+                raise HTTPException(
+                    status_code=401,
+                    detail="AI provider rejected the provided API key."
+                ) from error
             raise HTTPException(
                 status_code=502,
                 detail="Mistral AI service unavailable"

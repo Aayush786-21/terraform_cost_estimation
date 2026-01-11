@@ -17,7 +17,10 @@
         <section id="summary-panel" class="summary-panel">
             <div class="summary-content">
                 <div class="total-cost">
-                    <span class="label">Estimated Monthly Cost</span>
+                    <div class="total-cost-header">
+                        <span class="label">Estimated Monthly Cost</span>
+                        <span class="estimate-badge">Assumption-based estimate</span>
+                    </div>
                     <span id="total-cost" class="amount">$0.00</span>
                 </div>
                 <div class="summary-meta">
@@ -65,7 +68,35 @@
                 <!-- Unpriced resources rendered here -->
             </div>
         </section>
+
+        <!-- AI Key Input Section -->
+        <section id="ai-key-section" class="ai-key-section">
+            <h2>AI Configuration (Optional)</h2>
+            <div class="ai-key-input-group">
+                <label for="ai-api-key">AI API Key</label>
+                <input 
+                    type="password" 
+                    id="ai-api-key" 
+                    name="ai-api-key" 
+                    placeholder="Enter your Mistral AI API key (optional)"
+                    autocomplete="off"
+                />
+                <p class="ai-key-helper">
+                    Use your own AI key to run analysis. Your key is never stored.
+                </p>
+            </div>
+        </section>
     </div>
+
+    <!-- Footer Disclaimer -->
+    <footer class="disclaimer-footer">
+        <p>
+            This tool provides cost estimates based on infrastructure configuration,
+            assumptions, and publicly available pricing information.
+            It is NOT an official cloud provider bill.
+            Actual costs may vary.
+        </p>
+    </footer>
 
     <script src="app.js"></script>
 </body>
