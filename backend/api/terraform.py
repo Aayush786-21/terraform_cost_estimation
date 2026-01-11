@@ -9,8 +9,11 @@ import httpx
 from backend.services.github_client import GitHubClient
 from backend.services.terraform_interpreter import TerraformInterpreter, TerraformInterpreterError
 from backend.services.cost_estimator import CostEstimator, CostEstimatorError
+from backend.services.cost_insights import CostInsightsService, CostInsightsError
 from backend.services.mistral_client import MistralAPIError
 from backend.domain.scenario_models import ScenarioInput
+from backend.domain.cost_models import CostEstimate
+from backend.domain.scenario_models import ScenarioEstimateResult
 from backend.utils.fs import extract_and_scan_terraform_files
 
 
@@ -51,6 +54,13 @@ class ScenarioModelRequest(BaseModel):
     """Request model for scenario modeling."""
     intent_graph: Dict[str, Any] = Field(..., description="Intent graph from Terraform interpretation")
     scenario: Dict[str, Any] = Field(..., description="Scenario input parameters")
+
+
+class InsightsRequest(BaseModel):
+    """Request model for cost insights."""
+    intent_graph: Dict[str, Any] = Field(..., description="Intent graph from Terraform interpretation")
+    base_estimate: Dict[str, Any] = Field(..., description="Base cost estimate")
+    scenario_result: Optional[Dict[str, Any]] = Field(None, description="Optional scenario comparison result")
 
 
 def get_access_token_from_session(request: Request) -> str:
@@ -445,4 +455,96 @@ async def estimate_scenario(
         raise HTTPException(
             status_code=500,
             detail="An unexpected error occurred while estimating scenario"
+        ) from error
+
+
+@router.post("/api/terraform/insights")
+async def generate_cost_insights(
+    request: Request,
+    insights_request: InsightsRequest
+) -> Dict[str, Any]:
+    """
+    Generate AI-powered cost insights and optimization suggestions.
+    
+    Uses Mistral AI to analyze cost estimates and provide advisory insights.
+    This is advisory-only and NEVER modifies cost estimates or calculations.
+    
+    Supports:
+    - High cost driver identification
+    - Region comparison insights (if scenario provided)
+    - Scaling assumption analysis
+    - Unpriced resource warnings
+    - Missing input identification
+    - General best practice suggestions
+    
+    Requires authentication via GitHub OAuth.
+    
+    Args:
+        request: FastAPI request object
+        insights_request: Request body with intent graph, base estimate, and optional scenario
+    
+    Returns:
+        JSON response with cost insights
+    
+    Raises:
+        HTTPException: If authentication fails, invalid input,
+                       Mistral API fails, or other errors occur
+    """
+    try:
+        # Authenticate
+        get_access_token_from_session(request)
+        
+        # Validate input
+        intent_graph = insights_request.intent_graph
+        if not intent_graph:
+            raise HTTPException(
+                status_code=400,
+                detail="Intent graph is required"
+            )
+        
+        base_estimate_dict = insights_request.base_estimate
+        if not base_estimate_dict:
+            raise HTTPException(
+                status_code=400,
+                detail="Base estimate is required"
+            )
+        
+        # Parse scenario result if provided
+        scenario_result = None
+        if insights_request.scenario_result:
+            scenario_result = insights_request.scenario_result
+        
+        # Generate insights using dict-based method
+        insights_service = CostInsightsService()
+        try:
+            insight_response = await insights_service.generate_insights_from_dicts(
+                intent_graph=intent_graph,
+                base_estimate_dict=base_estimate_dict,
+                scenario_result_dict=scenario_result
+            )
+        except CostInsightsError as error:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to generate insights: {str(error)}"
+            ) from error
+        except MistralAPIError as error:
+            raise HTTPException(
+                status_code=502,
+                detail="Mistral AI service unavailable"
+            ) from error
+        
+        # Build response
+        return {
+            "status": "ok",
+            "insights": insight_response.to_dict()["insights"]
+        }
+    
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as error:
+        # Log error in production, but don't expose details to client
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred while generating insights"
         ) from error
