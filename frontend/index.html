@@ -8,25 +8,21 @@
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>Terraform Cost Estimation</h1>
-            <p class="subtitle">Estimated monthly cost based on Terraform configuration</p>
-        </header>
-
-        <!-- Summary Panel -->
-        <section id="summary-panel" class="summary-panel">
-            <div class="summary-content">
-                <div class="total-cost">
-                    <div class="total-cost-header">
-                        <span class="label">Estimated Monthly Cost</span>
-                        <span class="estimate-badge">Assumption-based estimate</span>
-                    </div>
-                    <span id="total-cost" class="amount">$0.00</span>
+        <!-- SECTION A: HERO / SUMMARY -->
+        <section class="hero-section">
+            <div class="hero-content">
+                <h1 class="hero-title">Estimated Monthly Cost</h1>
+                <div class="cost-display">
+                    <span id="total-cost" class="cost-amount">$0.00</span>
+                    <span class="estimate-badge">Assumption-based estimate</span>
                 </div>
-                <div class="summary-meta">
-                    <div class="region-info">
-                        <span class="label">Region:</span>
-                        <span id="region">-</span>
+                <p class="hero-subtext">
+                    Based on your infrastructure configuration and pricing assumptions
+                </p>
+                <div class="hero-meta">
+                    <div class="region-pill">
+                        <span class="region-label">Region:</span>
+                        <span id="region" class="region-value">-</span>
                     </div>
                     <div class="coverage-badges" id="coverage-badges">
                         <!-- Coverage badges rendered here -->
@@ -35,43 +31,69 @@
             </div>
         </section>
 
-        <!-- Cost Heatmap Table -->
-        <section id="cost-table-section" class="cost-table-section">
-            <h2>Cost Breakdown</h2>
-            <div class="table-container">
-                <table id="cost-table" class="cost-table">
-                    <thead>
-                        <tr>
-                            <th>Cloud</th>
-                            <th>Service</th>
-                            <th>Resource Name</th>
-                            <th>Region</th>
-                            <th class="cost-column">Monthly Cost (USD)</th>
-                            <th>Confidence</th>
-                            <th>Assumptions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="cost-table-body">
-                        <!-- Table rows rendered here -->
-                    </tbody>
-                </table>
+        <!-- SECTION B: COST DRIVERS -->
+        <section class="cost-drivers-section">
+            <h2 class="section-title">Where Your Costs Go</h2>
+            <p class="section-description">Click a category to see detailed breakdown</p>
+            <div id="cost-drivers" class="cost-drivers-grid">
+                <!-- Cost driver cards rendered here -->
             </div>
         </section>
 
-        <!-- Unpriced Resources Panel -->
-        <section id="unpriced-section" class="unpriced-section">
-            <h2>Unpriced / Missing Information</h2>
-            <p class="unpriced-notice">
-                <strong>Note:</strong> These resources are NOT included in the total cost estimate.
-            </p>
-            <div id="unpriced-resources" class="unpriced-list">
-                <!-- Unpriced resources rendered here -->
+        <!-- SECTION C: DETAILED BREAKDOWN (Expandable) -->
+        <section class="breakdown-section">
+            <div class="breakdown-header">
+                <h2 class="section-title">Detailed Breakdown</h2>
+                <button id="toggle-breakdown" class="expand-button" aria-expanded="false">
+                    <span class="button-text">Show Details</span>
+                    <span class="button-icon">▼</span>
+                </button>
+            </div>
+            <div id="breakdown-content" class="breakdown-content" style="display: none;">
+                <div class="table-container">
+                    <table id="cost-table" class="cost-table">
+                        <thead>
+                            <tr>
+                                <th>Cloud</th>
+                                <th>Service</th>
+                                <th>Resource Name</th>
+                                <th>Region</th>
+                                <th class="cost-column">Monthly Cost (USD)</th>
+                                <th>Confidence</th>
+                                <th>Assumptions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cost-table-body">
+                            <!-- Table rows rendered here -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Unpriced Resources -->
+                <div id="unpriced-section" class="unpriced-section">
+                    <h3 class="subsection-title">Unpriced / Missing Information</h3>
+                    <p class="unpriced-notice">
+                        <strong>Note:</strong> These resources are NOT included in the total cost estimate.
+                    </p>
+                    <div id="unpriced-resources" class="unpriced-list">
+                        <!-- Unpriced resources rendered here -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION D: INSIGHTS (Advisory Tone) -->
+        <section class="insights-section">
+            <h2 class="section-title">Cost Insights & Suggestions</h2>
+            <p class="section-description">Advisory insights to help optimize your infrastructure costs</p>
+            <div id="insights-container" class="insights-grid">
+                <!-- Insight cards rendered here -->
             </div>
         </section>
 
         <!-- AI Key Input Section -->
         <section id="ai-key-section" class="ai-key-section">
-            <h2>AI Configuration (Optional)</h2>
+            <h2 class="section-title">AI Configuration (Optional)</h2>
             <div class="ai-key-input-group">
                 <label for="ai-api-key">AI API Key</label>
                 <input 
@@ -88,7 +110,7 @@
         </section>
     </div>
 
-    <!-- Footer Disclaimer -->
+    <!-- SECTION E: FOOTER (Grounding) -->
     <footer class="disclaimer-footer">
         <p>
             This tool provides cost estimates based on infrastructure configuration,
