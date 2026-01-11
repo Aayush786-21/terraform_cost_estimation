@@ -2,7 +2,7 @@
 AWS Pricing API client.
 Uses boto3 to query official AWS Price List API.
 """
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 import logging
 from datetime import datetime, timedelta
 
@@ -13,6 +13,7 @@ except ImportError:
     boto3 = None
 
 from backend.core.config import config
+from backend.pricing.aws_region_map import get_aws_pricing_location
 
 
 logger = logging.getLogger(__name__)
@@ -38,9 +39,26 @@ class AWSPricingClient:
         self.pricing_client = boto3.client('pricing', region_name=config.AWS_PRICING_REGION)
         self.cache_ttl = timedelta(seconds=config.PRICING_CACHE_TTL_SECONDS)
     
-    def _get_cache_key(self, service_code: str, instance_type: str, region: str) -> str:
-        """Generate cache key."""
-        return f"{service_code}:{instance_type}:{region}"
+    def _get_cache_key(
+        self, 
+        service_code: str, 
+        instance_type: str, 
+        region: str,
+        filters_hash: str = ""
+    ) -> str:
+        """
+        Generate cache key.
+        
+        Args:
+            service_code: AWS service code (e.g., 'AmazonEC2')
+            instance_type: Instance type (e.g., 't3.micro')
+            region: Region code (e.g., 'ap-south-1')
+            filters_hash: Optional hash of filter parameters to avoid cache collisions
+        """
+        base_key = f"{service_code}:{instance_type}:{region}"
+        if filters_hash:
+            return f"{base_key}:{filters_hash}"
+        return base_key
     
     def _get_cached_price(self, cache_key: str) -> Optional[float]:
         """Get cached price if still valid."""
@@ -56,19 +74,20 @@ class AWSPricingClient:
         """Cache price with current timestamp."""
         self._cache[cache_key] = (price, datetime.now())
     
-    def _normalize_region(self, region: str) -> str:
+    def _normalize_region(self, region_code: str) -> Tuple[str, Optional[str]]:
         """
-        Normalize AWS region name for pricing API.
-        Pricing API uses region codes like 'ap-south-1'.
+        Normalize AWS region code for pricing API.
+        AWS Pricing API uses human-readable location strings, not region codes.
         
         Args:
-            region: AWS region code (e.g., 'ap-south-1')
+            region_code: AWS region code (e.g., 'ap-south-1')
         
         Returns:
-            Normalized region name for pricing API
+            Tuple of (region_code, pricing_location_string)
+            pricing_location_string is None if region code not found
         """
-        # AWS pricing API expects region codes as-is
-        return region
+        pricing_location = get_aws_pricing_location(region_code)
+        return region_code, pricing_location
     
     async def get_ec2_instance_price(
         self,
@@ -90,21 +109,29 @@ class AWSPricingClient:
         Raises:
             AWSPricingError: If API call fails
         """
-        cache_key = self._get_cache_key("AmazonEC2", instance_type, region)
-        cached_price = self._get_cached_price(cache_key)
-        if cached_price is not None:
-            return cached_price
-        
         try:
             # Normalize region for pricing API
-            normalized_region = self._normalize_region(region)
+            region_code, pricing_location = self._normalize_region(region)
             
-            # Query pricing API
+            if pricing_location is None:
+                logger.warning(f"AWS region code '{region}' not found in region map")
+                return None
+            
+            # Build filter hash for cache key (includes OS, tenancy, capacity status)
+            filter_params = f"{operating_system}:Shared:Used"
+            filters_hash = hashlib.md5(filter_params.encode()).hexdigest()[:8]
+            cache_key_with_filters = self._get_cache_key("AmazonEC2", instance_type, region, filters_hash)
+            
+            cached_price = self._get_cached_price(cache_key_with_filters)
+            if cached_price is not None:
+                return cached_price
+            
+            # Query pricing API using location string (not region code)
             response = self.pricing_client.get_products(
                 ServiceCode='AmazonEC2',
                 Filters=[
                     {'Type': 'TERM_MATCH', 'Field': 'instanceType', 'Value': instance_type},
-                    {'Type': 'TERM_MATCH', 'Field': 'location', 'Value': normalized_region},
+                    {'Type': 'TERM_MATCH', 'Field': 'location', 'Value': pricing_location},  # Use location string
                     {'Type': 'TERM_MATCH', 'Field': 'operatingSystem', 'Value': operating_system},
                     {'Type': 'TERM_MATCH', 'Field': 'tenancy', 'Value': 'Shared'},
                     {'Type': 'TERM_MATCH', 'Field': 'capacitystatus', 'Value': 'Used'},
@@ -127,7 +154,7 @@ class AWSPricingClient:
                         price_per_unit = price_dimensions[dimension_key].get('pricePerUnit', {}).get('USD')
                         if price_per_unit:
                             hourly_price = float(price_per_unit)
-                            self._cache_price(cache_key, hourly_price)
+                            self._cache_price(cache_key_with_filters, hourly_price)
                             return hourly_price
             
             return None
@@ -159,19 +186,28 @@ class AWSPricingClient:
         Raises:
             AWSPricingError: If API call fails
         """
-        cache_key = self._get_cache_key("AmazonRDS", instance_type, region)
-        cached_price = self._get_cached_price(cache_key)
-        if cached_price is not None:
-            return cached_price
-        
         try:
-            normalized_region = self._normalize_region(region)
+            # Normalize region for pricing API
+            region_code, pricing_location = self._normalize_region(region)
+            
+            if pricing_location is None:
+                logger.warning(f"AWS region code '{region}' not found in region map")
+                return None
+            
+            # Build filter hash for cache key
+            filter_params = f"{engine}:Single-AZ"
+            filters_hash = hashlib.md5(filter_params.encode()).hexdigest()[:8]
+            cache_key_with_filters = self._get_cache_key("AmazonRDS", instance_type, region, filters_hash)
+            
+            cached_price = self._get_cached_price(cache_key_with_filters)
+            if cached_price is not None:
+                return cached_price
             
             response = self.pricing_client.get_products(
                 ServiceCode='AmazonRDS',
                 Filters=[
                     {'Type': 'TERM_MATCH', 'Field': 'instanceType', 'Value': instance_type},
-                    {'Type': 'TERM_MATCH', 'Field': 'location', 'Value': normalized_region},
+                    {'Type': 'TERM_MATCH', 'Field': 'location', 'Value': pricing_location},  # Use location string
                     {'Type': 'TERM_MATCH', 'Field': 'databaseEngine', 'Value': engine},
                     {'Type': 'TERM_MATCH', 'Field': 'deploymentOption', 'Value': 'Single-AZ'},
                 ],
@@ -190,7 +226,7 @@ class AWSPricingClient:
                         price_per_unit = price_dimensions[dimension_key].get('pricePerUnit', {}).get('USD')
                         if price_per_unit:
                             hourly_price = float(price_per_unit)
-                            self._cache_price(cache_key, hourly_price)
+                            self._cache_price(cache_key_with_filters, hourly_price)
                             return hourly_price
             
             return None

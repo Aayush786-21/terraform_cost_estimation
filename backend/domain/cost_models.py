@@ -62,6 +62,7 @@ class CostEstimate:
     unpriced_resources: List[UnpricedResource]
     region: str
     pricing_timestamp: datetime
+    coverage: Dict[str, str]  # Cloud provider -> coverage status
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -79,4 +80,5 @@ class CostEstimate:
             "pricing_timestamp": self.pricing_timestamp.isoformat(),
             "line_items": [item.to_dict() for item in sorted_items],
             "unpriced_resources": [resource.to_dict() for resource in self.unpriced_resources],
+            "coverage": self.coverage,
         }

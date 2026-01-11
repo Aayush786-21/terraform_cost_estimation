@@ -363,11 +363,71 @@ class CostEstimator:
         # Use first priced resource's region, or default
         region = line_items[0].region if line_items else (region_override or "us-east-1")
         
+        # Determine coverage status for each cloud provider
+        coverage = self._calculate_coverage(resources, line_items, unpriced_resources)
+        
         return CostEstimate(
             currency="USD",
             total_monthly_cost_usd=total_monthly_cost,
             line_items=line_items,
             unpriced_resources=unpriced_resources,
             region=region,
-            pricing_timestamp=datetime.now()
+            pricing_timestamp=datetime.now(),
+            coverage=coverage
         )
+    
+    def _calculate_coverage(
+        self,
+        resources: List[Dict[str, Any]],
+        line_items: List[CostLineItem],
+        unpriced_resources: List[UnpricedResource]
+    ) -> Dict[str, str]:
+        """
+        Calculate coverage status for each cloud provider.
+        
+        Args:
+            resources: All resources from intent graph
+            line_items: Successfully priced resources
+            unpriced_resources: Resources that couldn't be priced
+        
+        Returns:
+            Dictionary mapping cloud provider to coverage status
+        """
+        coverage = {
+            "aws": "partial",
+            "azure": "partial",
+            "gcp": "not_supported_yet"
+        }
+        
+        # Count resources by cloud
+        cloud_resources: Dict[str, int] = {}
+        cloud_priced: Dict[str, int] = {}
+        
+        for resource in resources:
+            cloud = resource.get("cloud", "unknown")
+            if cloud in ["aws", "azure", "gcp"]:
+                cloud_resources[cloud] = cloud_resources.get(cloud, 0) + 1
+        
+        for item in line_items:
+            cloud = item.cloud
+            if cloud in ["aws", "azure", "gcp"]:
+                cloud_priced[cloud] = cloud_priced.get(cloud, 0) + 1
+        
+        # Update coverage status
+        for cloud in ["aws", "azure", "gcp"]:
+            total = cloud_resources.get(cloud, 0)
+            priced = cloud_priced.get(cloud, 0)
+            
+            if cloud == "gcp":
+                coverage[cloud] = "not_supported_yet"
+            elif total == 0:
+                # No resources for this cloud
+                continue
+            elif priced == total:
+                coverage[cloud] = "full"
+            elif priced > 0:
+                coverage[cloud] = "partial"
+            else:
+                coverage[cloud] = "partial"  # Attempted but no prices found
+        
+        return coverage

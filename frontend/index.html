@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terraform Cost Estimation</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Terraform Cost Estimation</h1>
+            <p class="subtitle">Estimated monthly cost based on Terraform configuration</p>
+        </header>
+
+        <!-- Summary Panel -->
+        <section id="summary-panel" class="summary-panel">
+            <div class="summary-content">
+                <div class="total-cost">
+                    <span class="label">Estimated Monthly Cost</span>
+                    <span id="total-cost" class="amount">$0.00</span>
+                </div>
+                <div class="summary-meta">
+                    <div class="region-info">
+                        <span class="label">Region:</span>
+                        <span id="region">-</span>
+                    </div>
+                    <div class="coverage-badges" id="coverage-badges">
+                        <!-- Coverage badges rendered here -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Cost Heatmap Table -->
+        <section id="cost-table-section" class="cost-table-section">
+            <h2>Cost Breakdown</h2>
+            <div class="table-container">
+                <table id="cost-table" class="cost-table">
+                    <thead>
+                        <tr>
+                            <th>Cloud</th>
+                            <th>Service</th>
+                            <th>Resource Name</th>
+                            <th>Region</th>
+                            <th class="cost-column">Monthly Cost (USD)</th>
+                            <th>Confidence</th>
+                            <th>Assumptions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cost-table-body">
+                        <!-- Table rows rendered here -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Unpriced Resources Panel -->
+        <section id="unpriced-section" class="unpriced-section">
+            <h2>Unpriced / Missing Information</h2>
+            <p class="unpriced-notice">
+                <strong>Note:</strong> These resources are NOT included in the total cost estimate.
+            </p>
+            <div id="unpriced-resources" class="unpriced-list">
+                <!-- Unpriced resources rendered here -->
+            </div>
+        </section>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
