@@ -94,6 +94,17 @@ async def github_callback(
         return RedirectResponse(url="/")
     
     except httpx.HTTPStatusError as error:
+        # Provide clearer error message for redirect_uri mismatches
+        error_text = error.response.text or ""
+        if "redirect_uri" in error_text.lower() or error.response.status_code == 400:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"OAuth configuration error: The redirect URI '{config.GITHUB_REDIRECT_URI}' "
+                    "is not registered in your GitHub OAuth app. "
+                    "Please add this exact URL to your GitHub OAuth app's authorized redirect URIs."
+                )
+            )
         raise HTTPException(
             status_code=error.response.status_code,
             detail=f"Failed to exchange authorization code: {error.response.text}"

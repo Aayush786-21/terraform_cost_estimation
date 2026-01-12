@@ -31,7 +31,11 @@ if config.GITHUB_CLIENT_ID:
     safe_client_id = f"{config.GITHUB_CLIENT_ID[:4]}****"
 else:
     safe_client_id = "MISSING"
-logger.info("GitHub OAuth enabled for client_id=%s", safe_client_id)
+logger.info(
+    "GitHub OAuth enabled for client_id=%s, redirect_uri=%s",
+    safe_client_id,
+    config.GITHUB_REDIRECT_URI
+)
 
 
 app = FastAPI(

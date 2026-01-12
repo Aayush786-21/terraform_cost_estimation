@@ -15,7 +15,7 @@ class Config:
     GITHUB_REDIRECT_URI: str = os.getenv(
         "GITHUB_REDIRECT_URI", 
         "http://localhost:8000/auth/callback"
-    )
+    ).rstrip("/")  # Normalize: remove trailing slash for exact GitHub match
     
     # Session Configuration
     SESSION_SECRET: str = os.getenv("SESSION_SECRET", "super-secret-string")
@@ -44,12 +44,21 @@ class Config:
         Validates that required configuration values are set.
         
         Raises:
-            ValueError: If any required configuration is missing.
+            ValueError: If any required configuration is missing or invalid.
         """
         if not cls.GITHUB_CLIENT_ID:
             raise ValueError("GITHUB_CLIENT_ID is required")
         if not cls.GITHUB_CLIENT_SECRET:
             raise ValueError("GITHUB_CLIENT_SECRET is required")
+        
+        # Validate redirect_uri format
+        if not cls.GITHUB_REDIRECT_URI:
+            raise ValueError("GITHUB_REDIRECT_URI is required")
+        if not cls.GITHUB_REDIRECT_URI.startswith(("http://", "https://")):
+            raise ValueError(
+                f"GITHUB_REDIRECT_URI must be a valid URL (got: {cls.GITHUB_REDIRECT_URI})"
+            )
+        
         # Mistral model is required so that AI calls are well-defined.
         # API key is optional because users can provide their own via X-AI-API-Key.
         if not cls.MISTRAL_MODEL:
