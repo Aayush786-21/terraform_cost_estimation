@@ -1019,6 +1019,11 @@ function renderEstimate(estimateData, isScenario = false) {
     if (!isScenario && estimateData.insights) {
         renderInsights(estimateData.insights);
     }
+    
+    // Update export button state
+    if (window.updateExportButtonState) {
+        window.updateExportButtonState();
+    }
 }
 
 /**
@@ -1477,6 +1482,593 @@ function hideExplainer() {
 }
 
 /**
+ * Escape CSV value
+ */
+function escapeCSV(value) {
+    if (value === null || value === undefined) return '';
+    const str = String(value);
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+}
+
+/**
+ * Format assumptions for CSV
+ */
+function formatAssumptionsForCSV(assumptions) {
+    if (!assumptions || !Array.isArray(assumptions)) return '';
+    return assumptions.join('; ');
+}
+
+/**
+ * Export estimate as CSV
+ */
+function exportToCSV() {
+    const estimate = currentScenario || baseEstimate;
+    if (!estimate || !estimate.estimate) {
+        alert('No estimate data available to export.');
+        return;
+    }
+
+    const isScenario = !!currentScenario;
+    const lineItems = estimate.estimate.line_items || [];
+    const unpricedResources = estimate.estimate.unpriced_resources || [];
+    
+    // CSV headers
+    const headers = [
+        'cloud',
+        'service',
+        'resource_name',
+        'terraform_type',
+        'region',
+        'monthly_cost_usd',
+        'pricing_unit',
+        'confidence',
+        'assumptions',
+        'scenario',
+        'delta_usd',
+        'delta_percent'
+    ];
+    
+    // Calculate deltas if scenario is active
+    let deltas = null;
+    if (isScenario && baseEstimate) {
+        deltas = calculateLineItemDeltas(baseEstimate.estimate.line_items || [], lineItems);
+    }
+    
+    // Build CSV rows
+    const rows = [headers.join(',')];
+    
+    lineItems.forEach(item => {
+        const delta = deltas && deltas[item.resource_name] 
+            ? deltas[item.resource_name] 
+            : null;
+        
+        const row = [
+            escapeCSV(item.cloud || ''),
+            escapeCSV(item.service || ''),
+            escapeCSV(item.resource_name || ''),
+            escapeCSV(item.terraform_type || ''),
+            escapeCSV(item.region || ''),
+            escapeCSV(item.monthly_cost_usd || 0),
+            escapeCSV(item.pricing_unit || ''),
+            escapeCSV(item.confidence || ''),
+            escapeCSV(formatAssumptionsForCSV(item.assumptions)),
+            escapeCSV(isScenario ? 'scenario' : 'base'),
+            escapeCSV(delta ? delta.deltaUsd : ''),
+            escapeCSV(delta ? delta.deltaPercent : '')
+        ];
+        rows.push(row.join(','));
+    });
+    
+    // Add unpriced resources
+    if (unpricedResources.length > 0) {
+        unpricedResources.forEach(resource => {
+            const row = [
+                escapeCSV(''),
+                escapeCSV(''),
+                escapeCSV(resource.resource_name || ''),
+                escapeCSV(resource.terraform_type || ''),
+                escapeCSV(''),
+                escapeCSV(''),
+                escapeCSV(''),
+                escapeCSV('unpriced'),
+                escapeCSV(resource.reason || 'Resource not priced'),
+                escapeCSV(isScenario ? 'scenario' : 'base'),
+                escapeCSV(''),
+                escapeCSV('')
+            ];
+            rows.push(row.join(','));
+        });
+    }
+    
+    // Create CSV content
+    const csvContent = rows.join('\n');
+    
+    // Create blob and download
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = isScenario ? 'cost-estimate-scenario.csv' : 'cost-estimate-base.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+/**
+ * Calculate line item deltas for CSV export
+ */
+function calculateLineItemDeltas(baseItems, scenarioItems) {
+    const deltas = {};
+    const baseMap = {};
+    
+    // Create map of base items by resource name
+    baseItems.forEach(item => {
+        if (item.resource_name) {
+            baseMap[item.resource_name] = item;
+        }
+    });
+    
+    // Calculate deltas for scenario items
+    scenarioItems.forEach(item => {
+        if (item.resource_name) {
+            const baseItem = baseMap[item.resource_name];
+            if (baseItem) {
+                const deltaUsd = (item.monthly_cost_usd || 0) - (baseItem.monthly_cost_usd || 0);
+                const deltaPercent = baseItem.monthly_cost_usd > 0 
+                    ? (deltaUsd / baseItem.monthly_cost_usd) * 100 
+                    : 0;
+                deltas[item.resource_name] = {
+                    deltaUsd: deltaUsd.toFixed(2),
+                    deltaPercent: deltaPercent.toFixed(1)
+                };
+            }
+        }
+    });
+    
+    return deltas;
+}
+
+/**
+ * Export estimate as PDF (using print-to-PDF)
+ */
+function exportToPDF() {
+    const estimate = currentScenario || baseEstimate;
+    if (!estimate || !estimate.estimate) {
+        alert('No estimate data available to export.');
+        return;
+    }
+
+    const isScenario = !!currentScenario;
+    const data = estimate.estimate;
+    const lineItems = data.line_items || [];
+    const unpricedResources = data.unpriced_resources || [];
+    
+    // Calculate category totals
+    const { grouped } = groupByCategory(lineItems);
+    const categories = Object.values(grouped).sort((a, b) => b.totalCost - a.totalCost);
+    
+    // Get top 10 most expensive items
+    const topItems = [...lineItems]
+        .filter(item => item.priced && item.monthly_cost_usd > 0)
+        .sort((a, b) => (b.monthly_cost_usd || 0) - (a.monthly_cost_usd || 0))
+        .slice(0, 10);
+    
+    // Calculate deltas if scenario
+    let totalDelta = null;
+    let totalDeltaPercent = null;
+    if (isScenario && baseEstimate) {
+        const delta = data.total_monthly_cost_usd - baseEstimate.total_monthly_cost_usd;
+        totalDelta = delta;
+        totalDeltaPercent = baseEstimate.total_monthly_cost_usd > 0 
+            ? (delta / baseEstimate.total_monthly_cost_usd) * 100 
+            : 0;
+    }
+    
+    // Create printable content
+    const printWindow = window.open('', '_blank');
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+    
+    printWindow.document.write(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infrastructure Cost Estimate</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #1f2937;
+            background: white;
+            padding: 40px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .pdf-header {
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .pdf-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #111827;
+            margin-bottom: 8px;
+        }
+        .pdf-meta {
+            font-size: 14px;
+            color: #6b7280;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .pdf-section {
+            margin-bottom: 30px;
+        }
+        .pdf-section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #111827;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .pdf-summary {
+            background: #f9fafb;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .pdf-cost-large {
+            font-size: 32px;
+            font-weight: 600;
+            color: #111827;
+            margin-bottom: 8px;
+        }
+        .pdf-delta {
+            font-size: 14px;
+            color: #6b7280;
+            margin-top: 8px;
+        }
+        .pdf-delta.positive {
+            color: #dc2626;
+        }
+        .pdf-delta.negative {
+            color: #059669;
+        }
+        .pdf-category-list {
+            list-style: none;
+        }
+        .pdf-category-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .pdf-category-item:last-child {
+            border-bottom: none;
+        }
+        .pdf-category-name {
+            font-weight: 500;
+            color: #374151;
+        }
+        .pdf-category-cost {
+            font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
+            color: #111827;
+        }
+        .pdf-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+        }
+        .pdf-table th {
+            text-align: left;
+            padding: 10px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        .pdf-table td {
+            padding: 10px;
+            font-size: 14px;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .pdf-table tr:last-child td {
+            border-bottom: none;
+        }
+        .pdf-cost-value {
+            font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
+            text-align: right;
+            font-weight: 500;
+        }
+        .pdf-confidence {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .pdf-confidence.high {
+            background: #10b981;
+        }
+        .pdf-confidence.medium {
+            background: #f59e0b;
+        }
+        .pdf-confidence.low {
+            background: #ef4444;
+        }
+        .pdf-assumptions {
+            background: #f9fafb;
+            border-left: 3px solid #6366f1;
+            padding: 16px;
+            margin-top: 20px;
+            border-radius: 4px;
+        }
+        .pdf-assumptions-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #374151;
+        }
+        .pdf-assumptions-list {
+            list-style: none;
+            padding-left: 0;
+        }
+        .pdf-assumptions-list li {
+            padding: 4px 0;
+            color: #6b7280;
+            font-size: 14px;
+        }
+        .pdf-disclaimer {
+            background: #fef3c7;
+            border: 1px solid #fcd34d;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 40px;
+            font-size: 14px;
+            line-height: 1.8;
+            color: #78350f;
+        }
+        .pdf-disclaimer strong {
+            color: #92400e;
+        }
+        .pdf-unpriced {
+            margin-top: 20px;
+        }
+        .pdf-unpriced-list {
+            list-style: none;
+            padding-left: 0;
+        }
+        .pdf-unpriced-list li {
+            padding: 8px 0;
+            color: #6b7280;
+            font-size: 14px;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .pdf-unpriced-list li:last-child {
+            border-bottom: none;
+        }
+        @media print {
+            body {
+                padding: 20px;
+            }
+            .pdf-section {
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="pdf-header">
+        <h1 class="pdf-title">Infrastructure Cost Estimate</h1>
+        <div class="pdf-meta">
+            <span>Date: ${dateStr}</span>
+            <span>Region: ${data.region || 'N/A'}</span>
+            ${isScenario ? '<span style="color: #6366f1; font-weight: 500;">Scenario Comparison</span>' : ''}
+        </div>
+    </div>
+    
+    <div class="pdf-section">
+        <div class="pdf-summary">
+            <div class="pdf-cost-large">${formatCurrency(data.total_monthly_cost_usd || 0)}</div>
+            <div style="color: #6b7280; font-size: 14px;">Estimated Monthly Cost</div>
+            ${totalDelta !== null ? `
+                <div class="pdf-delta ${totalDelta >= 0 ? 'positive' : 'negative'}">
+                    ${totalDelta >= 0 ? '+' : ''}${formatCurrency(totalDelta)} 
+                    (${totalDeltaPercent >= 0 ? '+' : ''}${totalDeltaPercent.toFixed(1)}% vs base)
+                </div>
+            ` : ''}
+            <div style="margin-top: 12px; font-size: 12px; color: #6b7280;">
+                Coverage: 
+                ${data.coverage?.aws ? `AWS: ${data.coverage.aws}` : ''}
+                ${data.coverage?.azure ? ` | Azure: ${data.coverage.azure}` : ''}
+                ${data.coverage?.gcp ? ` | GCP: ${data.coverage.gcp}` : ''}
+            </div>
+        </div>
+    </div>
+    
+    <div class="pdf-section">
+        <h2 class="pdf-section-title">Cost by Category</h2>
+        <ul class="pdf-category-list">
+            ${categories.map(cat => `
+                <li class="pdf-category-item">
+                    <span class="pdf-category-name">${getCategoryName(cat.category)}</span>
+                    <span class="pdf-category-cost">${formatCurrency(cat.totalCost)} (${formatPercentage(cat.percentage / 100)})</span>
+                </li>
+            `).join('')}
+        </ul>
+    </div>
+    
+    ${topItems.length > 0 ? `
+    <div class="pdf-section">
+        <h2 class="pdf-section-title">Top 10 Most Expensive Resources</h2>
+        <table class="pdf-table">
+            <thead>
+                <tr>
+                    <th>Service</th>
+                    <th>Resource</th>
+                    <th>Cost</th>
+                    <th>Confidence</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${topItems.map(item => `
+                    <tr>
+                        <td>${item.service || 'N/A'}</td>
+                        <td>${item.resource_name || 'N/A'}</td>
+                        <td class="pdf-cost-value">${formatCurrency(item.monthly_cost_usd || 0)}</td>
+                        <td>
+                            <span class="pdf-confidence ${item.confidence || 'medium'}"></span>
+                            ${(item.confidence || 'medium').charAt(0).toUpperCase() + (item.confidence || 'medium').slice(1)}
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    </div>
+    ` : ''}
+    
+    ${isScenario && currentScenario?.assumptions ? `
+    <div class="pdf-section">
+        <h2 class="pdf-section-title">Scenario Assumptions</h2>
+        <div class="pdf-assumptions">
+            <div class="pdf-assumptions-title">Changes Applied:</div>
+            <ul class="pdf-assumptions-list">
+                ${Object.entries(currentScenario.assumptions).map(([key, value]) => `
+                    <li>${key}: ${value}</li>
+                `).join('')}
+            </ul>
+        </div>
+    </div>
+    ` : ''}
+    
+    <div class="pdf-section">
+        <h2 class="pdf-section-title">Assumptions & Uncertainty</h2>
+        <div class="pdf-assumptions">
+            <div class="pdf-assumptions-title">Key Assumptions:</div>
+            <ul class="pdf-assumptions-list">
+                <li>Costs are based on publicly available pricing data as of ${data.pricing_timestamp ? new Date(data.pricing_timestamp).toLocaleDateString() : 'current date'}</li>
+                <li>Autoscaling resources use average instance counts, not peak usage</li>
+                <li>Some values are inferred when not explicitly specified in configuration</li>
+                <li>Confidence indicators reflect certainty level: High (green), Medium (yellow), Low (red)</li>
+                <li>Actual costs may vary based on real usage patterns, discounts, and provider-specific factors</li>
+            </ul>
+        </div>
+    </div>
+    
+    ${unpricedResources.length > 0 ? `
+    <div class="pdf-section pdf-unpriced">
+        <h2 class="pdf-section-title">Unpriced Resources</h2>
+        <ul class="pdf-unpriced-list">
+            ${unpricedResources.map(resource => `
+                <li>
+                    <strong>${resource.resource_name || resource.terraform_type || 'Unknown'}</strong> 
+                    (${resource.terraform_type || 'N/A'}) - ${resource.reason || 'Not priced'}
+                </li>
+            `).join('')}
+        </ul>
+    </div>
+    ` : ''}
+    
+    <div class="pdf-disclaimer">
+        <strong>Important:</strong> This document contains cost estimates based on infrastructure configuration,
+        assumptions, and publicly available pricing information.
+        It is <strong>NOT</strong> an official cloud provider bill.
+        Actual costs may vary based on real usage, discounts, reserved capacity, and other factors.
+    </div>
+</body>
+</html>
+    `);
+    
+    printWindow.document.close();
+    
+    // Wait for content to load, then trigger print
+    setTimeout(() => {
+        printWindow.print();
+    }, 250);
+}
+
+/**
+ * Initialize export controls
+ */
+function initExportControls() {
+    const exportBtn = document.getElementById('export-btn');
+    const exportDropdown = document.getElementById('export-dropdown');
+    const exportCsvBtn = document.getElementById('export-csv-btn');
+    const exportPdfBtn = document.getElementById('export-pdf-btn');
+    
+    if (!exportBtn || !exportDropdown) return;
+    
+    // Toggle dropdown
+    exportBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isVisible = exportDropdown.style.display !== 'none';
+        exportDropdown.style.display = isVisible ? 'none' : 'block';
+        
+        // Close on outside click
+        if (!isVisible) {
+            setTimeout(() => {
+                document.addEventListener('click', function closeDropdown() {
+                    exportDropdown.style.display = 'none';
+                    document.removeEventListener('click', closeDropdown);
+                }, { once: true });
+            }, 0);
+        }
+    });
+    
+    // CSV export
+    if (exportCsvBtn) {
+        exportCsvBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            exportDropdown.style.display = 'none';
+            exportToCSV();
+        });
+    }
+    
+    // PDF export
+    if (exportPdfBtn) {
+        exportPdfBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            exportDropdown.style.display = 'none';
+            exportToPDF();
+        });
+    }
+    
+    // Update button state based on estimate availability
+    function updateExportButtonState() {
+        const hasEstimate = baseEstimate !== null;
+        if (exportBtn) {
+            exportBtn.disabled = !hasEstimate;
+        }
+    }
+    
+    // Check state initially and on estimate changes
+    updateExportButtonState();
+    
+    // Re-check when estimate is rendered (we'll call this from renderEstimate)
+    window.updateExportButtonState = updateExportButtonState;
+}
+
+/**
  * Initialize explainer
  */
 function initExplainer() {
@@ -1559,6 +2151,7 @@ function init() {
     initRegionDropdown();
     initResetButton();
     initExplainer();
+    initExportControls();
     
     // In the future, this could fetch from the API:
     // apiRequest('/api/terraform/estimate', { method: 'POST', ... })

@@ -19,6 +19,25 @@
                 <p class="hero-subtext">
                     Based on your infrastructure configuration and pricing assumptions
                 </p>
+                <div class="hero-actions">
+                    <div class="export-controls">
+                        <button id="export-btn" class="export-button" aria-label="Export estimate">
+                            <span class="export-icon">📥</span>
+                            <span class="export-label">Export</span>
+                            <span class="export-arrow">▼</span>
+                        </button>
+                        <div id="export-dropdown" class="export-dropdown" style="display: none;">
+                            <button id="export-csv-btn" class="export-option">
+                                <span class="export-option-icon">📊</span>
+                                Export CSV
+                            </button>
+                            <button id="export-pdf-btn" class="export-option">
+                                <span class="export-option-icon">📄</span>
+                                Export PDF
+                            </button>
+                        </div>
+                    </div>
+                </div>
                 <div class="hero-meta">
                     <div class="region-container">
                         <div class="region-pill" id="region-pill">
