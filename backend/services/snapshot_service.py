@@ -6,6 +6,7 @@ Stores estimate snapshots in-memory with TTL expiration.
 
 import uuid
 import time
+import copy
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 
@@ -71,8 +72,8 @@ class SnapshotService:
             }
         }
         
-        # Store snapshot
-        self._snapshots[snapshot_id] = snapshot
+        # Store snapshot (deep copy to ensure immutability)
+        self._snapshots[snapshot_id] = copy.deepcopy(snapshot)
         
         # Periodic cleanup
         self._maybe_cleanup()
@@ -85,9 +86,9 @@ class SnapshotService:
         
         Args:
             snapshot_id: Snapshot identifier
-            
+        
         Returns:
-            Snapshot data if found and not expired, None otherwise
+            Snapshot data if found and not expired, None otherwise (deep copy for immutability)
         """
         # Cleanup expired snapshots first
         self._maybe_cleanup()
@@ -103,7 +104,8 @@ class SnapshotService:
             del self._snapshots[snapshot_id]
             return None
         
-        return snapshot
+        # Return deep copy to ensure immutability
+        return copy.deepcopy(snapshot)
     
     def _maybe_cleanup(self):
         """

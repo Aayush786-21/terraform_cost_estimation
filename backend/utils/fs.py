@@ -2,6 +2,7 @@
 Filesystem utilities for extracting archives and scanning Terraform files.
 """
 import os
+import shutil
 import zipfile
 import tempfile
 from pathlib import Path

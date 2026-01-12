@@ -208,8 +208,28 @@ Return ONLY valid JSON array, no markdown, no explanation, no code blocks."""
         
         Returns:
             True if valid, False otherwise
+        
+        Raises:
+            ValueError: If insight violates validation rules
         """
         try:
+            # Require disclaimer explicitly (check first, before other validations)
+            if "disclaimer" not in insight_dict or not insight_dict["disclaimer"]:
+                raise ValueError("All insights must include a disclaimer")
+            
+            # Reject numeric savings claims by key name (safety)
+            FORBIDDEN_KEYS = {
+                "savings",
+                "savings_usd",
+                "savings_percent",
+                "estimated_savings",
+                "reduce_cost",
+                "cost_reduction",
+            }
+            for key in insight_dict.keys():
+                if any(forbidden in key.lower() for forbidden in FORBIDDEN_KEYS):
+                    raise ValueError("Numeric savings claims are not allowed in insights")
+            
             # Validate required fields
             required_fields = [
                 "type", "title", "description", "affected_resources",
@@ -246,24 +266,11 @@ Return ONLY valid JSON array, no markdown, no explanation, no code blocks."""
             if insight_dict["confidence"] not in ["high", "medium", "low"]:
                 return False
             
-            # Validate disclaimer exists (safety requirement)
-            disclaimer = insight_dict.get("disclaimer", "")
-            if not disclaimer or len(disclaimer.strip()) == 0:
-                return False
-            
-            # Reject numeric savings claims (safety)
-            description = insight_dict.get("description", "").lower()
-            suggestions_text = " ".join(insight_dict.get("suggestions", [])).lower()
-            combined_text = (description + " " + suggestions_text).lower()
-            
-            # Check for savings promises
-            savings_keywords = ["save $", "reduce by", "save %", "guaranteed savings"]
-            for keyword in savings_keywords:
-                if keyword in combined_text:
-                    return False
-            
             return True
         
+        except ValueError:
+            # Re-raise ValueError (validation failures)
+            raise
         except (TypeError, AttributeError, KeyError):
             return False
     
@@ -359,6 +366,55 @@ Return ONLY valid JSON array, no markdown, no explanation, no code blocks."""
                 "resource_name": resource.resource_name,
                 "terraform_type": resource.terraform_type,
             })
+        
+        # Validate and convert insights
+        validated_insights = []
+        for insight_dict in insights_array[:self.MAX_INSIGHTS]:
+            if not isinstance(insight_dict, dict):
+                continue
+            
+            # Validate insight (may raise ValueError for savings/disclaimer violations)
+            try:
+                if not self._validate_insight(insight_dict, known_resources):
+                    logger.warning(f"Skipping invalid insight: {insight_dict.get('title', 'unknown')}")
+                    continue
+            except ValueError as e:
+                logger.warning(f"Rejecting insight due to validation error: {e}")
+                continue
+            
+            # Build AffectedResource objects
+            affected_resources = [
+                AffectedResource(
+                    resource_name=r.get("resource_name"),
+                    terraform_type=r.get("terraform_type")
+                )
+                for r in insight_dict.get("affected_resources", [])
+            ]
+            
+            # Build Insight object
+            insight = Insight(
+                type=insight_dict["type"],
+                title=insight_dict["title"],
+                description=insight_dict["description"],
+                affected_resources=affected_resources,
+                confidence=insight_dict["confidence"],
+                assumptions_referenced=insight_dict.get("assumptions_referenced", []),
+                suggestions=insight_dict.get("suggestions", []),
+                disclaimer=insight_dict["disclaimer"],
+            )
+            
+            validated_insights.append(insight)
+        
+        # Deduplicate insights by type and title
+        seen = set()
+        deduplicated = []
+        for insight in validated_insights:
+            key = (insight.type, insight.title.lower())
+            if key not in seen:
+                seen.add(key)
+                deduplicated.append(insight)
+        
+        return InsightResponse(insights=deduplicated[:self.MAX_INSIGHTS])
     
     async def generate_insights_from_dicts(
         self,
@@ -567,8 +623,13 @@ Return ONLY valid JSON array, no markdown, no explanation, no code blocks."""
             if not isinstance(insight_dict, dict):
                 continue
             
-            if not self._validate_insight(insight_dict, known_resources):
-                logger.warning(f"Skipping invalid insight: {insight_dict.get('title', 'unknown')}")
+            # Validate insight (may raise ValueError for savings/disclaimer violations)
+            try:
+                if not self._validate_insight(insight_dict, known_resources):
+                    logger.warning(f"Skipping invalid insight: {insight_dict.get('title', 'unknown')}")
+                    continue
+            except ValueError as e:
+                logger.warning(f"Rejecting insight due to validation error: {e}")
                 continue
             
             affected_resources = [
@@ -593,51 +654,6 @@ Return ONLY valid JSON array, no markdown, no explanation, no code blocks."""
             validated_insights.append(insight)
         
         # Deduplicate
-        seen = set()
-        deduplicated = []
-        for insight in validated_insights:
-            key = (insight.type, insight.title.lower())
-            if key not in seen:
-                seen.add(key)
-                deduplicated.append(insight)
-        
-        return InsightResponse(insights=deduplicated[:self.MAX_INSIGHTS])
-        
-        # Validate and convert insights
-        validated_insights = []
-        for insight_dict in insights_array[:self.MAX_INSIGHTS]:  # Limit to max
-            if not isinstance(insight_dict, dict):
-                continue
-            
-            # Validate insight
-            if not self._validate_insight(insight_dict, known_resources):
-                logger.warning(f"Skipping invalid insight: {insight_dict.get('title', 'unknown')}")
-                continue
-            
-            # Build AffectedResource objects
-            affected_resources = [
-                AffectedResource(
-                    resource_name=r.get("resource_name"),
-                    terraform_type=r.get("terraform_type")
-                )
-                for r in insight_dict.get("affected_resources", [])
-            ]
-            
-            # Build Insight object
-            insight = Insight(
-                type=insight_dict["type"],
-                title=insight_dict["title"],
-                description=insight_dict["description"],
-                affected_resources=affected_resources,
-                confidence=insight_dict["confidence"],
-                assumptions_referenced=insight_dict.get("assumptions_referenced", []),
-                suggestions=insight_dict.get("suggestions", []),
-                disclaimer=insight_dict["disclaimer"],
-            )
-            
-            validated_insights.append(insight)
-        
-        # Deduplicate insights by type and title
         seen = set()
         deduplicated = []
         for insight in validated_insights:

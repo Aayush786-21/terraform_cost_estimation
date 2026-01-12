@@ -3,7 +3,7 @@ Session utilities for authentication and session management.
 Handles session validation, expiry, and cleanup.
 """
 from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -15,6 +15,19 @@ IDLE_TIMEOUT = timedelta(minutes=30)  # 30 minutes of inactivity
 SESSION_CREATED_AT_KEY = "session_created_at"
 LAST_ACTIVITY_AT_KEY = "last_activity_at"
 GITHUB_ACCESS_TOKEN_KEY = "github_access_token"
+
+
+def _parse_ts(ts: str) -> datetime:
+    """
+    Parse ISO format timestamp string to datetime.
+    
+    Args:
+        ts: ISO format timestamp string
+    
+    Returns:
+        datetime object
+    """
+    return datetime.fromisoformat(ts)
 
 
 def is_session_valid(session: Dict[str, Any]) -> bool:
@@ -39,43 +52,38 @@ def is_session_valid(session: Dict[str, Any]) -> bool:
     if GITHUB_ACCESS_TOKEN_KEY not in session:
         return False
     
-    now = datetime.now()
+    # Check for required timestamp keys
+    if SESSION_CREATED_AT_KEY not in session or LAST_ACTIVITY_AT_KEY not in session:
+        return False
     
-    # Check absolute session lifetime
-    session_created_at = session.get(SESSION_CREATED_AT_KEY)
-    if session_created_at:
-        if isinstance(session_created_at, str):
-            # Parse ISO format string
-            try:
-                session_created_at = datetime.fromisoformat(session_created_at)
-            except (ValueError, AttributeError):
-                logger.warning("Invalid session_created_at format, treating as expired")
-                return False
+    now = datetime.now(timezone.utc)
+    
+    try:
+        # Parse timestamps
+        created_at = _parse_ts(session[SESSION_CREATED_AT_KEY])
+        last_activity = _parse_ts(session[LAST_ACTIVITY_AT_KEY])
         
-        if isinstance(session_created_at, datetime):
-            elapsed = now - session_created_at
-            if elapsed > ABSOLUTE_SESSION_LIFETIME:
-                logger.info("Session expired: absolute lifetime exceeded")
-                return False
-    
-    # Check idle timeout
-    last_activity_at = session.get(LAST_ACTIVITY_AT_KEY)
-    if last_activity_at:
-        if isinstance(last_activity_at, str):
-            # Parse ISO format string
-            try:
-                last_activity_at = datetime.fromisoformat(last_activity_at)
-            except (ValueError, AttributeError):
-                logger.warning("Invalid last_activity_at format, treating as expired")
-                return False
+        # Ensure timezone-aware for comparison
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        if last_activity.tzinfo is None:
+            last_activity = last_activity.replace(tzinfo=timezone.utc)
         
-        if isinstance(last_activity_at, datetime):
-            idle_time = now - last_activity_at
-            if idle_time > IDLE_TIMEOUT:
-                logger.info("Session expired: idle timeout exceeded")
-                return False
+        # Check absolute session lifetime
+        if now - created_at > ABSOLUTE_SESSION_LIFETIME:
+            logger.info("Session expired: absolute lifetime exceeded")
+            return False
+        
+        # Check idle timeout
+        if now - last_activity > IDLE_TIMEOUT:
+            logger.info("Session expired: idle timeout exceeded")
+            return False
+        
+        return True
     
-    return True
+    except (ValueError, AttributeError, KeyError) as e:
+        logger.warning(f"Invalid session timestamp format: {e}")
+        return False
 
 
 def touch_session(session: Dict[str, Any]) -> None:
@@ -90,7 +98,7 @@ def touch_session(session: Dict[str, Any]) -> None:
     if not session:
         return
     
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     session[LAST_ACTIVITY_AT_KEY] = now.isoformat()
     
     # Ensure session_created_at exists (for new sessions)
@@ -141,7 +149,7 @@ def initialize_session(session: Dict[str, Any], access_token: str) -> None:
         session: Session dictionary from Starlette SessionMiddleware (modified in-place)
         access_token: GitHub OAuth access token
     """
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     session[GITHUB_ACCESS_TOKEN_KEY] = access_token
     session[SESSION_CREATED_AT_KEY] = now.isoformat()
     session[LAST_ACTIVITY_AT_KEY] = now.isoformat()

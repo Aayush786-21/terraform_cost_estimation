@@ -2,7 +2,7 @@
 Cost estimator service.
 Converts intent graph into cost estimates using official pricing APIs.
 """
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 import logging
 
