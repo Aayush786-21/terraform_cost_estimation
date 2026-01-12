@@ -37,6 +37,10 @@
                             </button>
                         </div>
                     </div>
+                    <button id="share-btn" class="share-button" aria-label="Share estimate">
+                        <span class="share-icon">🔗</span>
+                        <span class="share-label">Share</span>
+                    </button>
                 </div>
                 <div class="hero-meta">
                     <div class="region-container">
@@ -188,6 +192,42 @@
                 </p>
             </div>
         </section>
+    </div>
+
+    <!-- SHARE MODAL -->
+    <div id="share-modal" class="share-modal" role="dialog" aria-labelledby="share-title" aria-modal="true" style="display: none;">
+        <div class="share-modal-overlay"></div>
+        <div class="share-modal-content">
+            <div class="share-header">
+                <h2 id="share-title" class="share-title">Share Estimate</h2>
+                <button class="share-close" aria-label="Close share modal" id="share-close-btn">
+                    <span aria-hidden="true">×</span>
+                </button>
+            </div>
+            <div class="share-body">
+                <p class="share-description">
+                    Create a read-only link to share this estimate with your team.
+                    The link will expire in 24 hours.
+                </p>
+                <div class="share-url-container">
+                    <input 
+                        type="text" 
+                        id="share-url-input" 
+                        class="share-url-input" 
+                        readonly
+                        placeholder="Generating share link..."
+                    />
+                    <button id="copy-share-url-btn" class="copy-share-url-btn" aria-label="Copy share link">
+                        <span class="copy-icon">📋</span>
+                        Copy
+                    </button>
+                </div>
+                <div id="share-status" class="share-status" style="display: none;"></div>
+            </div>
+            <div class="share-footer">
+                <button class="share-dismiss-btn" id="share-dismiss-btn">Close</button>
+            </div>
+        </div>
     </div>
 
     <!-- EXPLAINER MODAL -->

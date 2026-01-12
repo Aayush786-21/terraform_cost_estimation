@@ -10,6 +10,7 @@ from backend.core.config import config
 from backend.auth.github import router as auth_router
 from backend.api.repos import router as repos_router
 from backend.api.terraform import router as terraform_router
+from backend.api.share import router as share_router
 from backend.middleware.rate_limiter import RateLimitMiddleware
 from backend.middleware.request_size_limiter import RequestSizeLimiterMiddleware
 
@@ -47,6 +48,7 @@ app.add_middleware(RequestSizeLimiterMiddleware)
 app.include_router(auth_router)
 app.include_router(repos_router)
 app.include_router(terraform_router)
+app.include_router(share_router)
 
 
 @app.get("/", response_class=HTMLResponse)

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shared Cost Estimate</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Read-only banner */
+        .read-only-banner {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white;
+            padding: var(--space-md) var(--space-xl);
+            text-align: center;
+            box-shadow: var(--shadow-md);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .read-only-banner-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--space-sm);
+        }
+        
+        .read-only-icon {
+            font-size: 1.2rem;
+        }
+        
+        .read-only-text {
+            font-size: 0.95rem;
+            font-weight: 500;
+        }
+        
+        /* Hide interactive controls in shared view */
+        .hero-actions,
+        .region-comparison-control,
+        .traffic-assumptions,
+        .autoscaling-control,
+        .expand-button,
+        .ai-key-section {
+            display: none !important;
+        }
+        
+        /* Disable scenario controls */
+        .scenario-banner,
+        .scenario-comparison-section,
+        .reset-button {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="read-only-banner">
+        <div class="read-only-banner-content">
+            <span class="read-only-icon">🔒</span>
+            <span class="read-only-text">Read-only shared estimate</span>
+        </div>
+    </div>
+    
+    <div class="container">
+        <!-- SECTION A: HERO / SUMMARY -->
+        <section class="hero-section">
+            <div class="hero-content">
+                <h1 class="hero-title">Estimated Monthly Cost</h1>
+                <div class="cost-display">
+                    <span id="total-cost" class="cost-amount">$0.00</span>
+                    <span class="estimate-badge">Assumption-based estimate</span>
+                </div>
+                <p class="hero-subtext">
+                    Based on your infrastructure configuration and pricing assumptions
+                </p>
+                <div class="hero-meta">
+                    <div class="region-container">
+                        <div class="region-pill" id="region-pill">
+                            <span class="region-label">Region:</span>
+                            <span id="region" class="region-value">-</span>
+                        </div>
+                    </div>
+                    <div class="coverage-badges" id="coverage-badges">
+                        <!-- Coverage badges rendered here -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION B: COST DRIVERS -->
+        <section class="cost-drivers-section">
+            <h2 class="section-title">Cost Drivers</h2>
+            <p class="section-description">Breakdown by category</p>
+            <div id="cost-drivers" class="cost-drivers-grid">
+                <!-- Cost driver cards rendered here -->
+            </div>
+        </section>
+
+        <!-- SECTION C: DETAILED BREAKDOWN (Always visible in shared view) -->
+        <section class="breakdown-section">
+            <div class="breakdown-header">
+                <h2 class="section-title">Detailed Breakdown</h2>
+            </div>
+            <div class="breakdown-content" style="display: block;">
+                <table class="cost-table">
+                    <thead>
+                        <tr>
+                            <th>Cloud</th>
+                            <th>Service</th>
+                            <th>Resource</th>
+                            <th>Region</th>
+                            <th>Monthly Cost</th>
+                            <th>Confidence</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cost-table-body">
+                        <!-- Table rows rendered here -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Unpriced Resources -->
+        <section id="unpriced-section" class="unpriced-section" style="display: none;">
+            <h3 class="subsection-title">Unpriced Resources</h3>
+            <div id="unpriced-resources">
+                <!-- Unpriced resources rendered here -->
+            </div>
+        </section>
+
+        <!-- SECTION D: INSIGHTS -->
+        <section class="insights-section">
+            <h2 class="section-title">Cost Insights</h2>
+            <p class="section-description">AI-generated advisory insights</p>
+            <div id="insights-container" class="insights-container">
+                <!-- Insights rendered here -->
+            </div>
+        </section>
+    </div>
+
+    <!-- SECTION E: FOOTER (Grounding) -->
+    <footer class="disclaimer-footer">
+        <p>
+            This tool provides cost estimates based on infrastructure configuration,
+            assumptions, and publicly available pricing information.
+            It is NOT an official cloud provider bill.
+            Actual costs may vary.
+        </p>
+    </footer>
+
+    <script src="share.js"></script>
+</body>
+</html>

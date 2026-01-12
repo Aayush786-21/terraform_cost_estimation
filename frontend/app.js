@@ -1024,6 +1024,11 @@ function renderEstimate(estimateData, isScenario = false) {
     if (window.updateExportButtonState) {
         window.updateExportButtonState();
     }
+    
+    // Update share button state
+    if (window.updateShareButtonState) {
+        window.updateShareButtonState();
+    }
 }
 
 /**
@@ -2008,6 +2013,240 @@ function exportToPDF() {
 }
 
 /**
+ * Create share snapshot
+ */
+async function createShareSnapshot() {
+    const estimate = currentScenario || baseEstimate;
+    if (!estimate || !estimate.estimate) {
+        showShareError('No estimate data available to share.');
+        return;
+    }
+
+    try {
+        // Prepare snapshot data
+        const snapshotData = {
+            base_estimate: baseEstimate ? baseEstimate.estimate : null,
+            scenario_estimate: currentScenario ? estimate.estimate : null,
+            deltas: null,
+            insights: null,
+            scenario_label: null,
+            region: estimate.estimate.region || null
+        };
+
+        // Add scenario data if active
+        if (currentScenario && baseEstimate) {
+            // Calculate deltas for scenario
+            const scenarioLineItems = estimate.estimate.line_items || [];
+            const baseLineItems = baseEstimate.estimate.line_items || [];
+            
+            // Simple delta calculation
+            const totalDelta = estimate.estimate.total_monthly_cost_usd - baseEstimate.total_monthly_cost_usd;
+            const totalDeltaPercent = baseEstimate.total_monthly_cost_usd > 0 
+                ? (totalDelta / baseEstimate.total_monthly_cost_usd) * 100 
+                : 0;
+            
+            snapshotData.deltas = [{
+                type: 'total',
+                delta_usd: totalDelta,
+                delta_percent: totalDeltaPercent
+            }];
+            
+            snapshotData.scenario_label = `Scenario: ${estimate.estimate.region || 'Custom'}`;
+        }
+
+        // Add insights if available (only for base estimate)
+        if (!currentScenario && window.SAMPLE_INSIGHTS) {
+            snapshotData.insights = window.SAMPLE_INSIGHTS;
+        }
+
+        // Call API
+        const response = await fetch('/api/share', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(snapshotData)
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ detail: 'Failed to create share link' }));
+            throw new Error(error.detail || 'Failed to create share link');
+        }
+
+        const data = await response.json();
+        
+        // Show share URL in modal
+        const urlInput = document.getElementById('share-url-input');
+        if (urlInput) {
+            urlInput.value = data.share_url;
+        }
+        
+        showShareSuccess('Share link created successfully!');
+        
+    } catch (error) {
+        console.error('Failed to create share snapshot:', error);
+        showShareError(error.message || 'Failed to create share link. Please try again.');
+    }
+}
+
+/**
+ * Show share success message
+ */
+function showShareSuccess(message) {
+    const statusEl = document.getElementById('share-status');
+    if (statusEl) {
+        statusEl.textContent = message;
+        statusEl.className = 'share-status success';
+        statusEl.style.display = 'block';
+        
+        // Auto-hide after 3 seconds
+        setTimeout(() => {
+            statusEl.style.display = 'none';
+        }, 3000);
+    }
+}
+
+/**
+ * Show share error message
+ */
+function showShareError(message) {
+    const statusEl = document.getElementById('share-status');
+    if (statusEl) {
+        statusEl.textContent = message;
+        statusEl.className = 'share-status error';
+        statusEl.style.display = 'block';
+    }
+}
+
+/**
+ * Copy share URL to clipboard
+ */
+async function copyShareUrl() {
+    const urlInput = document.getElementById('share-url-input');
+    if (!urlInput || !urlInput.value) {
+        showShareError('No share URL available. Please create a share link first.');
+        return;
+    }
+
+    try {
+        await navigator.clipboard.writeText(urlInput.value);
+        showShareSuccess('Link copied to clipboard!');
+    } catch (error) {
+        // Fallback for older browsers
+        urlInput.select();
+        document.execCommand('copy');
+        showShareSuccess('Link copied to clipboard!');
+    }
+}
+
+/**
+ * Show share modal
+ */
+function showShareModal() {
+    const modal = document.getElementById('share-modal');
+    if (!modal) return;
+    
+    // Reset form
+    const urlInput = document.getElementById('share-url-input');
+    if (urlInput) urlInput.value = '';
+    const statusEl = document.getElementById('share-status');
+    if (statusEl) statusEl.style.display = 'none';
+    
+    modal.style.display = 'flex';
+    
+    // Create snapshot
+    createShareSnapshot();
+    
+    // Trap focus
+    const focusableElements = modal.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    const firstFocusable = focusableElements[0];
+    if (firstFocusable) {
+        firstFocusable.focus();
+    }
+    
+    // Prevent body scroll
+    document.body.style.overflow = 'hidden';
+}
+
+/**
+ * Hide share modal
+ */
+function hideShareModal() {
+    const modal = document.getElementById('share-modal');
+    if (!modal) return;
+    
+    modal.style.display = 'none';
+    
+    // Restore body scroll
+    document.body.style.overflow = '';
+}
+
+/**
+ * Initialize share controls
+ */
+function initShareControls() {
+    const shareBtn = document.getElementById('share-btn');
+    const shareCloseBtn = document.getElementById('share-close-btn');
+    const shareDismissBtn = document.getElementById('share-dismiss-btn');
+    const copyUrlBtn = document.getElementById('copy-share-url-btn');
+    const overlay = document.querySelector('.share-modal-overlay');
+    
+    if (!shareBtn) return;
+    
+    // Share button handler
+    shareBtn.addEventListener('click', () => {
+        if (baseEstimate) {
+            showShareModal();
+        } else {
+            alert('No estimate available to share.');
+        }
+    });
+    
+    // Close button handler
+    if (shareCloseBtn) {
+        shareCloseBtn.addEventListener('click', hideShareModal);
+    }
+    
+    // Dismiss button handler
+    if (shareDismissBtn) {
+        shareDismissBtn.addEventListener('click', hideShareModal);
+    }
+    
+    // Copy URL button handler
+    if (copyUrlBtn) {
+        copyUrlBtn.addEventListener('click', copyShareUrl);
+    }
+    
+    // Overlay click handler
+    if (overlay) {
+        overlay.addEventListener('click', hideShareModal);
+    }
+    
+    // Escape key handler
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const modal = document.getElementById('share-modal');
+            if (modal && modal.style.display !== 'none') {
+                hideShareModal();
+            }
+        }
+    });
+    
+    // Update button state based on estimate availability
+    function updateShareButtonState() {
+        const hasEstimate = baseEstimate !== null;
+        if (shareBtn) {
+            shareBtn.disabled = !hasEstimate;
+        }
+    }
+    
+    updateShareButtonState();
+    window.updateShareButtonState = updateShareButtonState;
+}
+
+/**
  * Initialize export controls
  */
 function initExportControls() {
@@ -2152,6 +2391,7 @@ function init() {
     initResetButton();
     initExplainer();
     initExportControls();
+    initShareControls();
     
     // In the future, this could fetch from the API:
     // apiRequest('/api/terraform/estimate', { method: 'POST', ... })
