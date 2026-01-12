@@ -42,12 +42,18 @@ class Config:
     def validate(cls) -> None:
         """
         Validates that required configuration values are set.
-        Raises ValueError if any required configuration is missing.
+        
+        Raises:
+            ValueError: If any required configuration is missing.
         """
         if not cls.GITHUB_CLIENT_ID:
             raise ValueError("GITHUB_CLIENT_ID is required")
         if not cls.GITHUB_CLIENT_SECRET:
             raise ValueError("GITHUB_CLIENT_SECRET is required")
+        # Mistral model is required so that AI calls are well-defined.
+        # API key is optional because users can provide their own via X-AI-API-Key.
+        if not cls.MISTRAL_MODEL:
+            raise ValueError("MISTRAL_MODEL is required")
 
 
 config = Config()

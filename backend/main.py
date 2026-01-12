@@ -2,6 +2,8 @@
 Main FastAPI application bootstrap.
 Configures middleware and includes routers.
 """
+import logging
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from starlette.middleware.sessions import SessionMiddleware
@@ -15,11 +17,21 @@ from backend.middleware.rate_limiter import RateLimitMiddleware
 from backend.middleware.request_size_limiter import RequestSizeLimiterMiddleware
 
 
+logger = logging.getLogger(__name__)
+
 # Validate configuration on startup
 try:
     config.validate()
 except ValueError as error:
+    # Fail fast with a clear, non-secret-bearing message
     raise RuntimeError(f"Configuration error: {error}") from error
+
+# Log a safe summary of GitHub OAuth configuration (no secrets)
+if config.GITHUB_CLIENT_ID:
+    safe_client_id = f"{config.GITHUB_CLIENT_ID[:4]}****"
+else:
+    safe_client_id = "MISSING"
+logger.info("GitHub OAuth enabled for client_id=%s", safe_client_id)
 
 
 app = FastAPI(

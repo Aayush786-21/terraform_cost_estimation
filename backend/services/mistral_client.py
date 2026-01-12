@@ -24,7 +24,7 @@ class MistralClient:
         Initialize Mistral client with API key.
         
         Priority:
-        1. Provided api_key parameter
+        1. Provided api_key parameter (e.g., X-AI-API-Key header)
         2. Server-side config.MISTRAL_API_KEY (fallback, dev only)
         
         Args:
@@ -34,7 +34,8 @@ class MistralClient:
         self.api_key = api_key or config.MISTRAL_API_KEY
         self.base_url = config.MISTRAL_API_BASE_URL
         self.model = config.MISTRAL_MODEL
-        self.timeout = 30  # 30 seconds timeout for AI requests
+        # Timeout is configurable via environment (MISTRAL_TIMEOUT)
+        self.timeout = config.MISTRAL_TIMEOUT
         self.max_tokens = config.MISTRAL_MAX_TOKENS
         self.retries = 3  # Number of retries for transient errors
         self.backoff_factor = 0.5  # For exponential backoff
