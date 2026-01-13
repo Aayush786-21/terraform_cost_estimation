@@ -320,7 +320,8 @@ body {
     border-bottom: 2px solid var(--color-beige);
 }
 
-.input-tab {
+.input-tab,
+a.input-tab {
     padding: var(--space-md) var(--space-xl);
     background: none;
     border: none;
@@ -339,14 +340,15 @@ body {
 
 .input-tab.active {
     color: var(--accent-primary);
-    border-bottom-color: var(--accent-primary);
+    border-bottom: 2px solid transparent;
 }
 
 .input-tab-content {
-    display: none;
+    display: none !important;
 }
 
 .input-tab-content.active {
+    display: flex !important;
     display: block;
 }
 
@@ -412,7 +414,12 @@ body {
 }
 
 .file-upload-prompt {
-    color: var(--text-secondary);
+    color: var(--text-primary);
+}
+
+.file-upload-prompt p {
+    color: var(--text-primary);
+    font-weight: 500;
 }
 
 .upload-icon {

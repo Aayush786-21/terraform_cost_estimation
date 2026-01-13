@@ -16,6 +16,7 @@ let baseEstimate = null;
 let currentScenario = null;
 let currentIntentGraph = null;
 let uploadedFiles = [];
+let originalTerraformText = null; // Store original Terraform text for re-estimation
 
 // Time unit selector state
 let currentTimeUnit = 'monthly';
@@ -1353,27 +1354,20 @@ async function reEstimateWithRegion(newRegion) {
             totalCostEl.textContent = 'Calculating...';
         }
         
-        // Call estimate API with region override
-        // Use the same endpoint pattern as the original estimate
-        const endpoint = currentIntentGraph 
-            ? '/api/terraform/estimate'
-            : '/api/terraform/estimate/local';
-        
-        const requestBody = currentIntentGraph
-            ? {
-                intent_graph: currentIntentGraph,
-                region_override: newRegion,
-                scenario: null
-            }
-            : {
-                terraform_files: uploadedFiles,
+        // Use scenario endpoint with region_override
+        // This endpoint accepts intent_graph and doesn't require authentication
+        const requestBody = {
+            intent_graph: currentIntentGraph,
+            scenario: {
                 region_override: newRegion
-            };
+            }
+        };
         
-        const response = await fetch(apiUrl(endpoint), {
+        const response = await fetch(apiUrl('/api/terraform/estimate/scenario'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'X-AI-API-Key': getAIAPIKey() || ''
             },
             body: JSON.stringify(requestBody)
         });
@@ -1385,19 +1379,19 @@ async function reEstimateWithRegion(newRegion) {
         
         const data = await response.json();
         
-        if (data.status === 'ok' && data.estimate) {
-            // Update base estimate
-            baseEstimate = data.estimate;
+        if (data.status === 'ok' && data.scenario_result) {
+            // Use the scenario estimate (which has the new region)
+            baseEstimate = data.scenario_result.scenario_estimate;
             currentScenario = null; // Clear any scenario when changing region
             
             // Store updated intent graph if provided
-            if (data.intent_graph) {
-                currentIntentGraph = data.intent_graph;
+            if (data.scenario_result.intent_graph) {
+                currentIntentGraph = data.scenario_result.intent_graph;
             }
             
-            // Render the new estimate
+            // Render the new estimate (use scenario estimate as base)
             const estimateData = {
-                estimate: data.estimate,
+                estimate: data.scenario_result.scenario_estimate,
                 scenario_result: null,
                 insights: data.insights || null
             };
@@ -2608,15 +2602,22 @@ function initTerraformInput() {
         
         fileInput.addEventListener('change', (e) => {
             const files = Array.from(e.target.files);
+            // When webkitdirectory is used, all files in the selected folder are included
+            // Filter will handle .tf files from folders or individually selected files
             handleFiles(files);
         });
     }
     
     function handleFiles(files) {
-        uploadedFiles = files.filter(f => f.name.endsWith('.tf') || f.name.endsWith('.zip'));
+        // Filter for .tf files (when folder is selected, all files in folder are included)
+        // Also allow .zip files
+        uploadedFiles = files.filter(f => {
+            const fileName = f.name.toLowerCase();
+            return fileName.endsWith('.tf') || fileName.endsWith('.zip');
+        });
         
         if (uploadedFiles.length === 0) {
-            alert('Please select .tf or .zip files only');
+            alert('Please select .tf files or a folder containing .tf files');
             return;
         }
         
@@ -2636,13 +2637,24 @@ function initTerraformInput() {
                 const removeBtn = item.querySelector('.file-item-remove');
                 removeBtn.addEventListener('click', () => {
                     uploadedFiles.splice(index, 1);
-                    handleFiles(uploadedFiles);
+                    if (uploadedFiles.length === 0) {
+                        // Hide estimate button and file list when no files (analyze repo button stays visible)
+                        if (estimateFromFilesBtn) {
+                            estimateFromFilesBtn.style.display = 'none';
+                        }
+                        if (fileList) {
+                            fileList.style.display = 'none';
+                        }
+                    } else {
+                        handleFiles(uploadedFiles);
+                    }
                 });
                 
                 fileList.appendChild(item);
             });
         }
         
+        // Show estimate button when files are selected (analyze repo button is always visible)
         if (estimateFromFilesBtn) {
             estimateFromFilesBtn.style.display = 'block';
         }
@@ -2743,6 +2755,20 @@ function initTerraformInput() {
                 return;
             }
             
+            // Scroll to results section immediately for better UX
+            const resultsSection = document.getElementById('results-section');
+            if (resultsSection) {
+                resultsSection.style.display = 'block';
+                // Small delay to ensure section is visible before scrolling
+                setTimeout(() => {
+                    resultsSection.scrollIntoView({ 
+                        behavior: 'smooth', 
+                        block: 'start',
+                        inline: 'nearest'
+                    });
+                }, 50);
+            }
+            
             await estimateFromLocal(text);
         });
     }
@@ -2753,6 +2779,20 @@ function initTerraformInput() {
             if (uploadedFiles.length === 0) {
                 alert('Please upload at least one file');
                 return;
+            }
+            
+            // Scroll to results section immediately for better UX
+            const resultsSection = document.getElementById('results-section');
+            if (resultsSection) {
+                resultsSection.style.display = 'block';
+                // Small delay to ensure section is visible before scrolling
+                setTimeout(() => {
+                    resultsSection.scrollIntoView({ 
+                        behavior: 'smooth', 
+                        block: 'start',
+                        inline: 'nearest'
+                    });
+                }, 50);
             }
             
             await estimateFromLocal(null, uploadedFiles);
@@ -2824,6 +2864,14 @@ async function estimateFromLocal(terraformText = null, files = null, silent = fa
             // Store intent graph for scenario API calls
             currentIntentGraph = data.intent_graph;
             
+            // Store original Terraform text/files for re-estimation
+            if (terraformText) {
+                originalTerraformText = terraformText;
+            } else if (files && files.length > 0) {
+                // Store files for re-estimation
+                uploadedFiles = files;
+            }
+            
             // Render estimate
             const estimateData = {
                 estimate: data.estimate,
@@ -2844,15 +2892,18 @@ async function estimateFromLocal(terraformText = null, files = null, silent = fa
                 totalCostEl.style.opacity = '1';
             }
             
-            // Only hide input section and scroll if not in silent mode
+            // Scroll to results section if not in silent mode (but keep input section visible)
             if (!silent) {
-                const inputSection = document.getElementById('terraform-input-section') || document.querySelector('.try-it');
-                if (inputSection) inputSection.style.display = 'none';
-                
-                // Scroll to results
-                if (resultsSection) {
-                    resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
+                // Scroll to results section with a small delay to ensure DOM is updated
+                setTimeout(() => {
+                    if (resultsSection) {
+                        resultsSection.scrollIntoView({ 
+                            behavior: 'smooth', 
+                            block: 'start',
+                            inline: 'nearest'
+                        });
+                    }
+                }, 100);
             }
         }
     } catch (error) {

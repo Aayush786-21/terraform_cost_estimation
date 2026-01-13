@@ -280,17 +280,20 @@ resource "aws_rds_instance" "db" {
 
         <!-- Terraform input + preview layout -->
         <div class="glass-panel p-4 md:p-6 lg:p-8 reveal" data-reveal id="terraform-input-section">
-          <div class="grid gap-6 lg:grid-cols-12">
-            <!-- Left: tabs + textarea (keep IDs/classes for app.js) -->
-            <div class="lg:col-span-7 flex flex-col gap-4">
+          <div class="flex flex-col gap-4">
+            <!-- Tabs + textarea (keep IDs/classes for app.js) -->
+            <div class="flex flex-col gap-4">
               <div class="terraform-input-tabs flex items-center border-b border-slate-700/70 pb-1">
                 <button class="input-tab active text-xs uppercase tracking-[0.18em]" data-tab="paste">
-                  Paste Terraform
+                  Paste Terraform Code Here
                 </button>
                 <button class="input-tab text-xs uppercase tracking-[0.18em]" data-tab="upload">
-                  Upload Files
+                  Upload TF Files
                 </button>
-                </div>
+                <a href="/auth/login" class="input-tab text-xs uppercase tracking-[0.18em]" style="margin-left: auto; text-decoration: none;">
+                  Analyze a repo →
+                </a>
+              </div>
                 
               <div id="paste-tab" class="input-tab-content active flex flex-col gap-3">
                     <textarea 
@@ -311,12 +314,14 @@ resource "aws_rds_instance" "db" {
                             id="terraform-file-input" 
                             accept=".tf,.zip"
                             multiple
+                            webkitdirectory
+                            directory
                             style="display: none;"
                         />
                         <div class="file-upload-prompt">
                             <span class="upload-icon">📁</span>
-                            <p>Click to select .tf or .zip files</p>
-                            <p class="upload-hint">Or drag and drop files here</p>
+                            <p>Click to select .tf files or a folder</p>
+                            <p class="upload-hint">Or drag and drop files/folder here</p>
                         </div>
                     </div>
                     <div id="file-list" class="file-list" style="display: none;"></div>
@@ -324,62 +329,8 @@ resource "aws_rds_instance" "db" {
                         Estimate Costs
                     </button>
                 </div>
-                
-              <div class="github-note text-xs md:text-sm">
-                    <p>
-                        <strong>Optional:</strong> 
-                        <a href="/auth/login" class="github-link">Connect GitHub</a> 
-                        to analyze a repository directly.
-                    </p>
-              </div>
             </div>
-
-            <!-- Right: results preview skeleton -->
-            <div class="lg:col-span-5 flex flex-col gap-4">
-              <div class="glass-card p-4 md:p-5 h-full flex flex-col">
-                <div class="flex items-center justify-between mb-3">
-                  <div class="text-xs uppercase tracking-[0.18em] text-slate-400">Preview</div>
-                  <div class="inline-flex items-center gap-1 text-[0.7rem] text-slate-400">
-                    <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.9)]"></span>
-                    Ready to estimate
-                  </div>
-                </div>
-                <div class="space-y-3 text-xs text-slate-300">
-                  <div class="flex items-center justify-between">
-                    <span class="text-slate-400">Estimated monthly range</span>
-                    <span class="font-mono text-sm text-slate-50">$—</span>
-                  </div>
-                  <div class="h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                    <div class="h-full w-2/3 bg-gradient-to-r from-accent1 via-accent2 to-accent3 opacity-60"></div>
-                  </div>
-                  <div class="mt-4 space-y-2">
-                    <div class="flex items-center justify-between text-slate-400">
-                      <span>Top services</span>
-                      <span class="font-mono text-[0.7rem] text-slate-400">Compute · DB · Storage</span>
-                    </div>
-                    <div class="grid grid-cols-3 gap-2 text-[0.7rem]">
-                      <div class="rounded-lg bg-slate-900/80 border border-slate-800 px-2 py-2">
-                        <div class="text-slate-400 mb-1">Compute</div>
-                        <div class="font-mono text-slate-50">—</div>
-                      </div>
-                      <div class="rounded-lg bg-slate-900/80 border border-slate-800 px-2 py-2">
-                        <div class="text-slate-400 mb-1">Database</div>
-                        <div class="font-mono text-slate-50">—</div>
-                      </div>
-                      <div class="rounded-lg bg-slate-900/80 border border-slate-800 px-2 py-2">
-                        <div class="text-slate-400 mb-1">Networking</div>
-                        <div class="font-mono text-slate-50">—</div>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="mt-4 pt-3 border-t border-slate-800 text-[0.7rem] text-slate-400">
-                    Assumptions and a full table will appear after you run an estimate. No data is stored by default.
-                  </div>
-                </div>
-              </div>
-            </div>
-                </div>
-            </div>
+          </div>
         </div>
     </section>
 

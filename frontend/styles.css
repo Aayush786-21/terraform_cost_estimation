@@ -126,6 +126,8 @@ body {
     cursor: pointer;
     transition: all 0.2s;
     margin-bottom: -2px;
+    text-decoration: none;
+    display: inline-block;
 }
 
 .input-tab:hover {
@@ -134,15 +136,15 @@ body {
 
 .input-tab.active {
     color: var(--color-primary);
-    border-bottom-color: var(--color-primary);
+    border-bottom: 2px solid transparent;
 }
 
 .input-tab-content {
-    display: none;
+    display: none !important;
 }
 
 .input-tab-content.active {
-    display: block;
+    display: block !important;
 }
 
 .terraform-textarea {
@@ -186,7 +188,12 @@ body {
 }
 
 .file-upload-prompt {
-    color: var(--text-secondary);
+    color: var(--text-primary);
+}
+
+.file-upload-prompt p {
+    color: var(--text-primary);
+    font-weight: 500;
 }
 
 .upload-icon {
@@ -236,6 +243,52 @@ body {
 
 .file-item-remove:hover {
     color: var(--text-primary);
+}
+
+.button-group {
+    display: flex;
+    gap: var(--space-md);
+    margin-top: var(--space-lg);
+}
+
+.button-group .estimate-button {
+    flex: 1;
+}
+
+.analyze-repo-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.875rem 1.5rem;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(10px);
+    flex: 1;
+}
+
+/* When used in tabs row, adjust styling */
+.terraform-input-tabs .analyze-repo-button {
+    flex: 0;
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    margin-left: auto;
+}
+
+.analyze-repo-button:hover {
+    background: rgba(15, 23, 42, 0.8);
+    border-color: rgba(148, 163, 184, 0.5);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2);
+}
+
+.analyze-repo-button:active {
+    transform: translateY(0);
 }
 
 .estimate-button {
