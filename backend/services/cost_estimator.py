@@ -67,7 +67,10 @@ class CostEstimator:
         region_source = region_info.get("source", "unknown")
         region_value = region_info.get("value")
         
-        if region_source == "explicit" and region_value:
+        # Handle explicit region (from resource) or provider_default (from provider config)
+        if region_source in ["explicit", "provider_default"] and region_value:
+            if region_source == "provider_default":
+                assumptions.append(f"Region from provider config: {region_value}")
             return region_value, assumptions
         
         # Default region based on cloud provider
@@ -148,6 +151,33 @@ class CostEstimator:
         count_model = resource.get("count_model", {})
         confidence = count_model.get("confidence", "low")
         
+        # Handle free/low-cost networking resources (these don't have instance_type)
+        free_networking_resources = {
+            "aws_vpc": ("VPC", "Free - VPCs have no charge"),
+            "aws_subnet": ("VPC", "Free - Subnets have no charge"),
+            "aws_internet_gateway": ("VPC", "Free - Internet gateways have no charge"),
+            "aws_route_table": ("VPC", "Free - Route tables have no charge"),
+            "aws_route_table_association": ("VPC", "Free - Route table associations have no charge"),
+            "aws_security_group": ("EC2", "Free - Security groups have no charge"),
+            "aws_security_group_rule": ("EC2", "Free - Security group rules have no charge"),
+        }
+        
+        if terraform_type in free_networking_resources:
+            service_name, reason = free_networking_resources[terraform_type]
+            assumptions.append(reason)
+            return CostLineItem(
+                cloud="aws",
+                service=service_name,
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=0.0,
+                pricing_unit="month",
+                assumptions=assumptions,
+                priced=True,
+                confidence="high"
+            )
+        
         # Extract instance type or SKU
         instance_type = size_hint.get("instance_type") or size_hint.get("sku")
         if not instance_type:
@@ -194,6 +224,11 @@ class CostEstimator:
         
         except AWSPricingError as error:
             logger.warning(f"Failed to price AWS resource {resource_name}: {error}")
+            return None
+        except Exception as error:
+            # Catch any unexpected errors during pricing
+            logger.error(f"Unexpected error pricing AWS resource {resource_name} ({terraform_type}): {type(error).__name__}: {error}", 
+                        exc_info=True)
             return None
     
     async def _price_azure_resource(
@@ -319,33 +354,53 @@ class CostEstimator:
             # Price resource based on cloud provider
             line_item = None
             
-            if cloud == "aws":
-                line_item = await self._price_aws_resource(
-                    resource,
-                    resolved_region,
-                    resolved_count,
-                    assumptions
-                )
-            elif cloud == "azure":
-                line_item = await self._price_azure_resource(
-                    resource,
-                    resolved_region,
-                    resolved_count,
-                    assumptions
-                )
-            elif cloud == "gcp":
-                # GCP pricing not fully implemented
+            try:
+                if cloud == "aws":
+                    line_item = await self._price_aws_resource(
+                        resource,
+                        resolved_region,
+                        resolved_count,
+                        assumptions
+                    )
+                elif cloud == "azure":
+                    line_item = await self._price_azure_resource(
+                        resource,
+                        resolved_region,
+                        resolved_count,
+                        assumptions
+                    )
+                elif cloud == "gcp":
+                    # GCP pricing not fully implemented
+                    unpriced_resources.append(UnpricedResource(
+                        resource_name=resource_name,
+                        terraform_type=terraform_type,
+                        reason="GCP pricing not fully implemented"
+                    ))
+                    continue
+                else:
+                    unpriced_resources.append(UnpricedResource(
+                        resource_name=resource_name,
+                        terraform_type=terraform_type,
+                        reason=f"Cloud provider '{cloud}' not supported for pricing"
+                    ))
+                    continue
+            except (AWSPricingError, AzurePricingError, GCPPricingError) as error:
+                # Expected pricing errors - mark as unpriced
+                logger.warning(f"Pricing error for {resource_name} ({terraform_type}): {error}")
                 unpriced_resources.append(UnpricedResource(
                     resource_name=resource_name,
                     terraform_type=terraform_type,
-                    reason="GCP pricing not fully implemented"
+                    reason=f"Pricing lookup failed: {str(error)}"
                 ))
                 continue
-            else:
+            except Exception as error:
+                # Unexpected errors during pricing - mark as unpriced rather than failing
+                logger.error(f"Unexpected error pricing {resource_name} ({terraform_type}): {type(error).__name__}: {error}", 
+                           exc_info=True)
                 unpriced_resources.append(UnpricedResource(
                     resource_name=resource_name,
                     terraform_type=terraform_type,
-                    reason=f"Cloud provider '{cloud}' not supported for pricing"
+                    reason="Unexpected error during pricing lookup"
                 ))
                 continue
             

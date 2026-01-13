@@ -3,9 +3,11 @@ Main FastAPI application bootstrap.
 Configures middleware and includes routers.
 """
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from backend.core.config import config
@@ -66,30 +68,44 @@ app.include_router(repos_router)
 app.include_router(terraform_router)
 app.include_router(share_router)
 
+# NOTE:
+# This application is a single-page app (SPA).
+# All frontend routing is handled client-side.
+# Backend serves index.html at "/" and APIs under "/api/*".
+
+# Mount static files (CSS, JS, etc.)
+frontend_dir = Path(__file__).parent.parent / "frontend"
+if frontend_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(frontend_dir)), name="static")
+
 
 @app.get("/", response_class=HTMLResponse)
-async def root() -> str:
+async def root() -> HTMLResponse:
     """
-    Root endpoint serving simple frontend with Sign in with GitHub button.
+    Root endpoint serving the main single-page frontend.
     
     Returns:
-        HTML page with authentication button
+        HTML page (frontend/landing.html or frontend/index.html)
     """
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Terraform Cost Estimation</title>
-    </head>
-    <body>
-        <h1>Terraform Cost Estimation</h1>
-        <a href="/auth/login">
-            <button>Sign in with GitHub</button>
-        </a>
-        <br><br>
-        <a href="/api/me/repos">
-            <button>View My Repos</button>
-        </a>
-    </body>
-    </html>
-    """
+    # Try landing page first, fallback to index.html
+    landing_path = frontend_dir / "landing.html"
+    index_path = frontend_dir / "index.html"
+    
+    if landing_path.exists():
+        return FileResponse(landing_path)
+    elif index_path.exists():
+        return FileResponse(index_path)
+    else:
+        # Fallback if frontend file doesn't exist
+        return HTMLResponse(content="""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Terraform Cost Estimation</title>
+        </head>
+        <body>
+            <h1>Terraform Cost Estimation</h1>
+            <p>Frontend files not found. Please ensure frontend/landing.html or frontend/index.html exists.</p>
+        </body>
+        </html>
+        """)

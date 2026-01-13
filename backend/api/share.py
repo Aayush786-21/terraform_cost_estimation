@@ -66,7 +66,8 @@ async def create_share(request: ShareRequest, http_request: Request):
             else:
                 base_url = f"{scheme}://{host}"
         
-        share_url = f"{base_url}/share/{snapshot_id}"
+        # Use main page with share query parameter for single-page app
+        share_url = f"{base_url}/?share={snapshot_id}"
         
         return ShareResponse(
             status="ok",

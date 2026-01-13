@@ -14,7 +14,7 @@ class Config:
     GITHUB_CLIENT_SECRET: str = os.getenv("GITHUB_CLIENT_SECRET", "")
     GITHUB_REDIRECT_URI: str = os.getenv(
         "GITHUB_REDIRECT_URI", 
-        "http://localhost:8000/auth/callback"
+        "http://localhost:8080/auth/callback"
     ).rstrip("/")  # Normalize: remove trailing slash for exact GitHub match
     
     # Session Configuration

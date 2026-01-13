@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Understand Infrastructure Costs Before Deployment</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CDN (no build step) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ["Inter", "system-ui", "sans-serif"],
+              display: ["Space Grotesk", "system-ui", "sans-serif"],
+              mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+            },
+            colors: {
+              slateBg: "#030712",
+              panel: "#020617",
+              accent1: "#6366f1",
+              accent2: "#ec4899",
+              accent3: "#22c55e",
+            },
+            borderRadius: {
+              xl: "1.25rem",
+              "2xl": "1.75rem",
+            },
+          },
+        },
+      };
+    </script>
+
+    <!-- Existing CSS (structural) + new cinematic theme overrides -->
+    <link rel="stylesheet" href="/static/landing.css">
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/theme.css">
+</head>
+<body>
+    <div class="app-bg">
+      <div class="cursor-spotlight-layer"></div>
+      <div class="app-shell">
+        <!-- NAVBAR -->
+        <header class="site-nav">
+          <div class="site-nav-inner">
+            <a href="#hero" class="site-logo">
+              <span class="site-logo-mark"></span>
+              <span>Terraform Cost Estimation</span>
+            </a>
+            <nav class="hidden md:flex items-center gap-8">
+              <a href="#how-it-works" class="site-nav-link">How it works</a>
+              <a href="#try-it" class="site-nav-link">Try it</a>
+              <a href="#pricing" class="site-nav-link">Pricing</a>
+              <a href="#faq" class="site-nav-link">FAQ</a>
+            </nav>
+            <div class="hidden md:flex items-center gap-3">
+              <a href="#try-it" class="btn-secondary-glass">Anonymous demo</a>
+              <a href="/auth/login" class="site-nav-cta">Connect GitHub</a>
+            </div>
+            <button class="md:hidden site-nav-mobile-toggle" aria-label="Open navigation" id="nav-toggle">
+              <span class="i-menu h-4 w-4">☰</span>
+            </button>
+          </div>
+        </header>
+
+        <!-- Mobile nav (simple overlay) -->
+        <div id="nav-mobile" class="md:hidden fixed inset-x-4 top-16 z-20 hidden">
+          <div class="glass-card px-4 py-3">
+            <nav class="flex flex-col gap-3 text-sm">
+              <a href="#how-it-works" class="site-nav-link">How it works</a>
+              <a href="#try-it" class="site-nav-link">Try it</a>
+              <a href="#pricing" class="site-nav-link">Pricing</a>
+              <a href="#faq" class="site-nav-link">FAQ</a>
+              <div class="mt-2 flex flex-col gap-2">
+                <a href="#try-it" class="btn-secondary-glass w-full justify-center">Anonymous demo</a>
+                <a href="/auth/login" class="site-nav-cta w-full text-center">Connect GitHub</a>
+              </div>
+            </nav>
+        </div>
+        </div>
+
+        <!-- HERO SECTION -->
+        <section class="py-16 md:py-24 lg:py-28" id="hero">
+          <div class="section-max">
+            <div class="hero-grid gap-y-10">
+              <div class="flex flex-col gap-6 md:gap-8">
+                <span class="badge-pill reveal" data-reveal>
+                  <span class="badge-dot"></span>
+                  Pre-deploy cost clarity
+                </span>
+                <h1 class="hero-headline-display reveal reveal-stagger-1" data-reveal>
+                  Understand what your infrastructure will cost — before you deploy it.
+                </h1>
+                <p class="hero-subheadline hero-subheadline-display reveal reveal-stagger-2" data-reveal>
+                  Get honest cost estimates from your Terraform configuration, with assumptions and uncertainty clearly
+                  shown. Explore scenarios, share with your team, and make informed decisions before infrastructure is deployed.
+                </p>
+                <div class="flex flex-wrap gap-3 md:gap-4 pt-2 reveal reveal-stagger-3" data-reveal>
+                  <a href="#try-it" class="btn-primary-glow">
+                    <span>See how it works</span>
+                  </a>
+                  <a href="#how-it-works" class="btn-secondary-glass">
+                    <span>Learn more</span>
+                  </a>
+                </div>
+                <div class="flex items-center gap-3 text-xs text-slate-400 pt-3 reveal reveal-stagger-4" data-reveal>
+                  <span class="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_16px_rgba(52,211,153,0.9)]"></span>
+                  <span>No account required to try it with your Terraform.</span>
+                </div>
+              </div>
+
+              <!-- Hero Visual -->
+              <div class="reveal reveal-stagger-2" data-reveal data-parallax-depth="0.25">
+                <div class="gradient-border-card">
+                  <div class="gradient-border-strip"></div>
+                  <div class="gradient-border-inner">
+                    <div class="flex flex-col gap-3">
+                      <div class="flex items-center justify-between text-xs text-slate-400">
+                        <span class="inline-flex items-center gap-2">
+                          <span class="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.9)]"></span>
+                          Live estimate preview
+                        </span>
+                        <span>Terraform · Multi-cloud</span>
+                      </div>
+                      <div class="mt-2 grid grid-cols-12 gap-3">
+                        <div class="col-span-7">
+                          <div class="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-[0.72rem] font-mono text-slate-300 leading-relaxed shadow-inner">
+                            <div class="flex gap-1 pb-2 text-[0.65rem] text-slate-500">
+                              <span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>
+                              <span class="h-1.5 w-1.5 rounded-full bg-amber-400"></span>
+                              <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                            </div>
+                            <pre class="whitespace-pre overflow-x-auto"><code>resource "aws_instance" "web" {
+  instance_type = "t3.medium"
+  region        = "us-east-1"
+}
+
+resource "aws_rds_instance" "db" {
+  instance_class = "db.t3.small"
+}</code></pre>
+                          </div>
+                        </div>
+                        <div class="col-span-5 flex flex-col gap-3">
+                          <div class="rounded-xl bg-slate-900/80 border border-slate-700 px-3 py-3 shadow-lg">
+                            <div class="text-[0.7rem] uppercase tracking-[0.18em] text-slate-400 mb-2">Estimated monthly</div>
+                            <div class="text-3xl font-semibold text-slate-50">$2,430</div>
+                            <div class="mt-2 flex gap-2 text-[0.7rem] text-slate-400">
+                              <span class="px-2 py-1 rounded-full bg-emerald-500/15 text-emerald-300">Assumptions shown</span>
+                              <span class="px-2 py-1 rounded-full bg-slate-800/80 border border-slate-700">Multi-cloud</span>
+                            </div>
+                          </div>
+                          <div class="rounded-xl bg-slate-900/70 border border-slate-800 px-3 py-3 text-[0.74rem] text-slate-300">
+                            <div class="flex justify-between mb-1">
+                              <span>Compute</span>
+                              <span class="font-mono">$1,820</span>
+                            </div>
+                            <div class="flex justify-between mb-1">
+                              <span>Database</span>
+                              <span class="font-mono">$410</span>
+                            </div>
+                            <div class="flex justify-between text-slate-400">
+                              <span>Networking & misc.</span>
+                              <span class="font-mono">$200</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                </div>
+            </div>
+          </div>
+        </section>
+
+    <!-- VALUE PROPS SECTION -->
+    <section class="py-16 md:py-20" id="value-props">
+      <div class="section-max">
+        <div class="reveal" data-reveal>
+          <span class="badge-pill mb-4 inline-flex">Why this exists</span>
+          <h2 class="hero-headline-display text-2xl md:text-3xl mb-4">
+            Cost clarity during design — not after the first bill.
+          </h2>
+          <p class="hero-subheadline-display max-w-2xl">
+            Bring real numbers into architecture conversations. No more “we’ll see what the bill looks like”.
+          </p>
+        </div>
+        <div class="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <article class="feature-card p-5 md:p-6 reveal reveal-stagger-1" data-reveal>
+            <div class="text-2xl mb-3">📊</div>
+            <h3 class="text-base font-semibold text-slate-100 mb-2">See costs before deployment</h3>
+            <p class="text-sm text-slate-400">
+              Understand what your infrastructure will cost while you're still designing it. Make decisions with cost implications in mind.
+            </p>
+          </article>
+          <article class="feature-card p-5 md:p-6 reveal reveal-stagger-2" data-reveal>
+            <div class="text-2xl mb-3">🔍</div>
+            <h3 class="text-base font-semibold text-slate-100 mb-2">Explicit assumptions</h3>
+            <p class="text-sm text-slate-400">
+              Every estimate shows its assumptions: instance counts, usage, pricing assumptions — no false precision, no hidden magic.
+            </p>
+          </article>
+          <article class="feature-card p-5 md:p-6 reveal reveal-stagger-3" data-reveal>
+            <div class="text-2xl mb-3">🔄</div>
+            <h3 class="text-base font-semibold text-slate-100 mb-2">Explore scenarios safely</h3>
+            <p class="text-sm text-slate-400">
+              Compare design alternatives side‑by‑side. See cost differences without touching production or committing to a migration.
+            </p>
+          </article>
+          <article class="feature-card p-5 md:p-6 reveal reveal-stagger-4" data-reveal>
+            <div class="text-2xl mb-3">💬</div>
+            <h3 class="text-base font-semibold text-slate-100 mb-2">Share and discuss</h3>
+            <p class="text-sm text-slate-400">
+              Export CSV/PDF. Share read‑only links with your team so engineers, product, and finance can work from the same picture.
+            </p>
+          </article>
+        </div>
+        </div>
+    </section>
+
+    <!-- HOW IT WORKS SECTION -->
+    <section class="py-16 md:py-20" id="how-it-works">
+      <div class="section-max">
+        <div class="mb-10 reveal" data-reveal>
+          <span class="badge-pill mb-4 inline-flex">How it works</span>
+          <h2 class="hero-headline-display text-2xl md:text-3xl mb-4">From Terraform to a story about your bill.</h2>
+          <p class="hero-subheadline-display max-w-2xl">
+            Under the hood is a pricing engine; on the surface is a calm narrative about where money goes and what’s assumed.
+                        </p>
+                    </div>
+        <div class="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+          <article class="step-card p-5 md:p-6 reveal reveal-stagger-1" data-reveal>
+            <div class="text-xs font-mono text-slate-400 mb-3">Step 01</div>
+            <h3 class="text-base font-semibold text-slate-100 mb-2">Connect your Terraform</h3>
+            <p class="text-sm text-slate-400">
+              Paste your configuration or point us at a repo. We read the resources you’re planning to deploy, regions, and instance types.
+            </p>
+          </article>
+          <article class="step-card p-5 md:p-6 reveal reveal-stagger-2" data-reveal>
+            <div class="text-xs font-mono text-slate-400 mb-3">Step 02</div>
+            <h3 class="text-base font-semibold text-slate-100 mb-2">See an estimated monthly cost</h3>
+            <p class="text-sm text-slate-400">
+              We call official cloud pricing APIs and assemble a total monthly number, broken down by cloud, service, and resource.
+            </p>
+          </article>
+          <article class="step-card p-5 md:p-6 reveal reveal-stagger-3" data-reveal>
+            <div class="text-xs font-mono text-slate-400 mb-3">Step 03</div>
+            <h3 class="text-base font-semibold text-slate-100 mb-2">Understand what drives that cost</h3>
+            <p class="text-sm text-slate-400">
+              See which services dominate the estimate, with explicit assumptions and confidence for every line item.
+            </p>
+          </article>
+          <article class="step-card p-5 md:p-6 reveal reveal-stagger-4" data-reveal>
+            <div class="text-xs font-mono text-slate-400 mb-3">Step 04</div>
+            <h3 class="text-base font-semibold text-slate-100 mb-2">Explore scenarios safely</h3>
+            <p class="text-sm text-slate-400">
+              Try different regions, instance sizes, or traffic assumptions. Compare scenarios side‑by‑side without touching prod.
+            </p>
+          </article>
+        </div>
+        </div>
+    </section>
+
+    <!-- TRY IT SECTION -->
+    <section class="py-16 md:py-20" id="try-it">
+      <div class="section-max">
+        <div class="mb-8 md:mb-10 reveal" data-reveal>
+          <span class="badge-pill mb-4 inline-flex">Hands-on</span>
+          <h2 class="hero-headline-display text-2xl md:text-3xl mb-4">Try it with your Terraform</h2>
+          <p class="hero-subheadline-display max-w-2xl">
+            Paste code or upload files to get an immediate, assumption‑aware estimate. No account required.
+          </p>
+        </div>
+
+        <!-- Terraform input + preview layout -->
+        <div class="glass-panel p-4 md:p-6 lg:p-8 reveal" data-reveal id="terraform-input-section">
+          <div class="grid gap-6 lg:grid-cols-12">
+            <!-- Left: tabs + textarea (keep IDs/classes for app.js) -->
+            <div class="lg:col-span-7 flex flex-col gap-4">
+              <div class="terraform-input-tabs flex items-center border-b border-slate-700/70 pb-1">
+                <button class="input-tab active text-xs uppercase tracking-[0.18em]" data-tab="paste">
+                  Paste Terraform
+                </button>
+                <button class="input-tab text-xs uppercase tracking-[0.18em]" data-tab="upload">
+                  Upload Files
+                </button>
+                </div>
+                
+              <div id="paste-tab" class="input-tab-content active flex flex-col gap-3">
+                    <textarea 
+                        id="terraform-textarea" 
+                    class="terraform-textarea w-full text-xs md:text-sm"
+                        placeholder="Paste your Terraform configuration here...&#10;&#10;Example:&#10;resource &quot;aws_instance&quot; &quot;web&quot; {&#10;  ami           = &quot;ami-0c55b159cbfafe1f0&quot;&#10;  instance_type = &quot;t3.micro&quot;&#10;  region        = &quot;us-east-1&quot;&#10;}"
+                    rows="14"
+                    ></textarea>
+                <button id="estimate-from-text-btn" class="estimate-button mt-1">
+                        Estimate Costs
+                    </button>
+                </div>
+                
+              <div id="upload-tab" class="input-tab-content flex flex-col gap-3">
+                    <div class="file-upload-area" id="file-upload-area">
+                        <input 
+                            type="file" 
+                            id="terraform-file-input" 
+                            accept=".tf,.zip"
+                            multiple
+                            style="display: none;"
+                        />
+                        <div class="file-upload-prompt">
+                            <span class="upload-icon">📁</span>
+                            <p>Click to select .tf or .zip files</p>
+                            <p class="upload-hint">Or drag and drop files here</p>
+                        </div>
+                    </div>
+                    <div id="file-list" class="file-list" style="display: none;"></div>
+                    <button id="estimate-from-files-btn" class="estimate-button" style="display: none;">
+                        Estimate Costs
+                    </button>
+                </div>
+                
+              <div class="github-note text-xs md:text-sm">
+                    <p>
+                        <strong>Optional:</strong> 
+                        <a href="/auth/login" class="github-link">Connect GitHub</a> 
+                        to analyze a repository directly.
+                    </p>
+              </div>
+            </div>
+
+            <!-- Right: results preview skeleton -->
+            <div class="lg:col-span-5 flex flex-col gap-4">
+              <div class="glass-card p-4 md:p-5 h-full flex flex-col">
+                <div class="flex items-center justify-between mb-3">
+                  <div class="text-xs uppercase tracking-[0.18em] text-slate-400">Preview</div>
+                  <div class="inline-flex items-center gap-1 text-[0.7rem] text-slate-400">
+                    <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.9)]"></span>
+                    Ready to estimate
+                  </div>
+                </div>
+                <div class="space-y-3 text-xs text-slate-300">
+                  <div class="flex items-center justify-between">
+                    <span class="text-slate-400">Estimated monthly range</span>
+                    <span class="font-mono text-sm text-slate-50">$—</span>
+                  </div>
+                  <div class="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                    <div class="h-full w-2/3 bg-gradient-to-r from-accent1 via-accent2 to-accent3 opacity-60"></div>
+                  </div>
+                  <div class="mt-4 space-y-2">
+                    <div class="flex items-center justify-between text-slate-400">
+                      <span>Top services</span>
+                      <span class="font-mono text-[0.7rem] text-slate-400">Compute · DB · Storage</span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 text-[0.7rem]">
+                      <div class="rounded-lg bg-slate-900/80 border border-slate-800 px-2 py-2">
+                        <div class="text-slate-400 mb-1">Compute</div>
+                        <div class="font-mono text-slate-50">—</div>
+                      </div>
+                      <div class="rounded-lg bg-slate-900/80 border border-slate-800 px-2 py-2">
+                        <div class="text-slate-400 mb-1">Database</div>
+                        <div class="font-mono text-slate-50">—</div>
+                      </div>
+                      <div class="rounded-lg bg-slate-900/80 border border-slate-800 px-2 py-2">
+                        <div class="text-slate-400 mb-1">Networking</div>
+                        <div class="font-mono text-slate-50">—</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mt-4 pt-3 border-t border-slate-800 text-[0.7rem] text-slate-400">
+                    Assumptions and a full table will appear after you run an estimate. No data is stored by default.
+                  </div>
+                </div>
+              </div>
+            </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- RESULTS SECTION (Hidden initially) -->
+    <section class="results-section" id="results-section" style="display: none;">
+        <div class="container">
+            <!-- SECTION A: HERO / SUMMARY -->
+            <section class="hero-section" id="hero-section-results">
+                <div class="hero-content">
+                    <h1 class="hero-title">Estimated Monthly Cost</h1>
+                    <div class="cost-display">
+                        <span id="total-cost" class="cost-amount">$0.00</span>
+                        <span class="estimate-badge">Assumption-based estimate</span>
+                    </div>
+                    <p class="hero-subtext">
+                        Based on your infrastructure configuration and pricing assumptions
+                    </p>
+                    <div class="hero-actions">
+                        <div class="export-controls">
+                            <button id="export-btn" class="export-button" aria-label="Export estimate">
+                                <span class="export-icon">📥</span>
+                                <span class="export-label">Export</span>
+                                <span class="export-arrow">▼</span>
+                            </button>
+                            <div id="export-dropdown" class="export-dropdown" style="display: none;">
+                                <button id="export-csv-btn" class="export-option">
+                                    <span class="export-option-icon">📊</span>
+                                    Export CSV
+                                </button>
+                                <button id="export-pdf-btn" class="export-option">
+                                    <span class="export-option-icon">📄</span>
+                                    Export PDF
+                                </button>
+                            </div>
+                        </div>
+                        <button id="share-btn" class="share-button" aria-label="Share estimate">
+                            <span class="share-icon">🔗</span>
+                            <span class="share-label">Share</span>
+                        </button>
+                    </div>
+                    <div class="hero-meta">
+                        <div class="region-container">
+                            <div class="region-pill" id="region-pill">
+                                <span class="region-label">Region:</span>
+                                <span id="region" class="region-value">-</span>
+                                <span class="region-chevron">▼</span>
+                            </div>
+                            <div id="region-dropdown" class="region-dropdown" style="display: none;">
+                                <div class="region-dropdown-header">Compare with region:</div>
+                                <div class="region-options" id="region-options">
+                                    <!-- Region options rendered here -->
+                                </div>
+                                <button id="compare-region-btn" class="compare-button" style="display: none;">
+                                    Compare with <span id="selected-region-name"></span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="traffic-assumptions">
+                            <label for="users-input" class="traffic-label">Traffic Assumptions (Optional)</label>
+                            <input 
+                                type="number" 
+                                id="users-input" 
+                                name="users-input" 
+                                placeholder="Average users/month"
+                                min="0"
+                                class="traffic-input"
+                            />
+                            <span class="traffic-helper">Only affects request-based services when applicable</span>
+                        </div>
+                        <div class="coverage-badges" id="coverage-badges">
+                            <!-- Coverage badges rendered here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION B: SCENARIO BANNER (Hidden initially) -->
+            <section id="scenario-banner-section" class="scenario-banner-section" style="display: none;">
+                <div class="scenario-banner">
+                    <div class="scenario-banner-header">
+                        <div class="scenario-banner-title">
+                            <span class="scenario-icon">🔄</span>
+                            <span id="scenario-label">Scenario Comparison Active</span>
+                        </div>
+                        <button id="reset-scenario-btn" class="reset-scenario-btn">
+                            Reset to Base Estimate
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION C: COST DRIVERS -->
+            <section class="cost-drivers-section" id="cost-drivers-section">
+                <h2 class="section-title">Where Your Costs Go</h2>
+                <p class="section-description">Click a category to see detailed breakdown</p>
+                <div id="cost-drivers" class="cost-drivers-grid">
+                    <!-- Cost drivers rendered here -->
+                </div>
+            </section>
+
+            <!-- SECTION D: DETAILED BREAKDOWN -->
+            <section class="breakdown-section" id="breakdown-section">
+                <div class="breakdown-header">
+                    <h2 class="section-title">Detailed Breakdown</h2>
+                    <button id="toggle-breakdown" class="expand-button" aria-expanded="false">
+                        <span class="button-text">Show Details</span>
+                        <span class="button-icon">▼</span>
+                    </button>
+                </div>
+                <div id="breakdown-content" class="breakdown-content" style="display: none;">
+                    <table class="cost-table" id="cost-table">
+                        <thead>
+                            <tr>
+                                <th>Resource</th>
+                                <th>Service</th>
+                                <th>Region</th>
+                                <th>Monthly Cost</th>
+                                <th>Confidence</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cost-table-body">
+                            <!-- Table rows rendered here -->
+                        </tbody>
+                    </table>
+                    <div id="unpriced-section" class="unpriced-section">
+                        <h3 class="subsection-title">Unpriced / Missing Information</h3>
+                        <p class="unpriced-notice">
+                            <strong>Note:</strong> These resources are NOT included in the total cost estimate.
+                        </p>
+                        <div id="unpriced-resources" class="unpriced-list">
+                            <!-- Unpriced resources rendered here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION E: SCENARIO COMPARISON -->
+            <section id="scenario-comparison-section" class="scenario-comparison-section" style="display: none;">
+                <h2 class="section-title">Scenario Comparison</h2>
+                <div class="comparison-grid">
+                    <div class="comparison-card base-estimate">
+                        <div class="comparison-card-header">
+                            <span class="comparison-label">Base Estimate</span>
+                            <span id="base-cost" class="comparison-cost">$0.00</span>
+                        </div>
+                        <div class="comparison-region" id="base-region">-</div>
+                    </div>
+                    <div class="comparison-card scenario-estimate">
+                        <div class="comparison-card-header">
+                            <span class="comparison-label">Scenario Estimate</span>
+                            <span id="scenario-cost" class="comparison-cost">$0.00</span>
+                        </div>
+                        <div class="comparison-region" id="scenario-region">-</div>
+                        <div id="scenario-delta" class="comparison-delta">
+                            <!-- Delta displayed here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION F: INSIGHTS -->
+            <section class="insights-section" id="insights-section">
+                <h2 class="section-title">Cost Insights & Suggestions</h2>
+                <p class="section-description">Advisory insights to help optimize your infrastructure costs</p>
+                <div id="insights-container" class="insights-grid">
+                    <!-- Insight cards rendered here -->
+                </div>
+            </section>
+        </div>
+    </section>
+
+    <!-- TRUST SECTION -->
+    <section class="py-16 md:py-20" id="trust">
+      <div class="section-max">
+        <div class="mb-10 reveal" data-reveal>
+          <span class="badge-pill mb-4 inline-flex">Positioning</span>
+          <h2 class="hero-headline-display text-2xl md:text-3xl mb-4">Built for understanding, not optimization.</h2>
+          <p class="hero-subheadline-display max-w-3xl">
+            This is a pre‑bill tool. It’s for design reviews, trade‑off conversations, and early alignment — not real‑time spend policing.
+                        </p>
+                    </div>
+        <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-10">
+          <article class="glass-card p-5 md:p-6 reveal reveal-stagger-1" data-reveal>
+            <h3 class="text-base font-semibold text-slate-100 mb-2">Pre-bill timing</h3>
+            <p class="text-sm text-slate-400">
+              We show costs <em>before</em> deployment, when design can still change. Not another dashboard for chasing overruns.
+            </p>
+          </article>
+          <article class="glass-card p-5 md:p-6 reveal reveal-stagger-2" data-reveal>
+            <h3 class="text-base font-semibold text-slate-100 mb-2">Explicit assumptions</h3>
+            <p class="text-sm text-slate-400">
+              Every estimate surfaces what it’s assuming — instance counts, hours, traffic, regions, and more — with confidence labels.
+            </p>
+          </article>
+          <article class="glass-card p-5 md:p-6 reveal reveal-stagger-3" data-reveal>
+            <h3 class="text-base font-semibold text-slate-100 mb-2">Scenarios without pressure</h3>
+            <p class="text-sm text-slate-400">
+              Explore “what if we used…” scenarios without the expectation that you’ll instantly optimize for the cheapest path.
+            </p>
+          </article>
+          <article class="glass-card p-5 md:p-6 reveal reveal-stagger-4" data-reveal>
+            <h3 class="text-base font-semibold text-slate-100 mb-2">Advisory insights</h3>
+            <p class="text-sm text-slate-400">
+              AI‑generated insights explain patterns in your estimate. They’re advisory, grounded in your config, and never auto‑apply changes.
+            </p>
+          </article>
+                </div>
+                
+        <!-- What this is not: gradient border card -->
+        <div class="gradient-border-card reveal" data-reveal>
+          <div class="gradient-border-strip"></div>
+          <div class="gradient-border-inner what-this-is-not">
+              <h3 class="not-title mb-3">What this is not</h3>
+              <ul class="not-list space-y-2 text-sm text-slate-300">
+                  <li class="flex gap-2">
+                    <span class="mt-1 text-slate-500">
+                      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                        <circle cx="8" cy="8" r="7" fill="none" stroke="rgba(148,163,184,0.9)" stroke-width="1.2"/>
+                        <path d="M5 8l2 2 4-4" fill="none" stroke="rgba(148,163,184,0.9)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                    <span><strong>A cloud provider bill</strong> — these are estimates based on assumptions, not actual usage.</span>
+                  </li>
+                  <li class="flex gap-2">
+                    <span class="mt-1 text-slate-500">
+                      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                        <circle cx="8" cy="8" r="7" fill="none" stroke="rgba(148,163,184,0.9)" stroke-width="1.2"/>
+                        <path d="M5 8l2 2 4-4" fill="none" stroke="rgba(148,163,184,0.9)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                    <span><strong>A cost optimization engine</strong> — we don’t recommend changes or auto‑calculate “savings plans”.</span>
+                  </li>
+                  <li class="flex gap-2">
+                    <span class="mt-1 text-slate-500">
+                      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                        <circle cx="8" cy="8" r="7" fill="none" stroke="rgba(148,163,184,0.9)" stroke-width="1.2"/>
+                        <path d="M5 8l2 2 4-4" fill="none" stroke="rgba(148,163,184,0.9)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                    <span><strong>A finance dashboard</strong> — we don’t ingest bills or enforce budgets.</span>
+                  </li>
+                  <li class="flex gap-2">
+                    <span class="mt-1 text-slate-500">
+                      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                        <circle cx="8" cy="8" r="7" fill="none" stroke="rgba(148,163,184,0.9)" stroke-width="1.2"/>
+                        <path d="M5 8l2 2 4-4" fill="none" stroke="rgba(148,163,184,0.9)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                    <span><strong>Real-time usage tracking</strong> — we estimate from configuration, not stream metrics.</span>
+                  </li>
+                    </ul>
+                </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PRICING SECTION -->
+    <section class="py-16 md:py-20" id="pricing">
+      <div class="section-max">
+        <div class="mb-10 reveal" data-reveal>
+          <span class="badge-pill mb-4 inline-flex">Pricing</span>
+          <h2 class="hero-headline-display text-2xl md:text-3xl mb-4">Start with anonymous estimates. Upgrade when it’s a habit.</h2>
+          <p class="hero-subheadline-display max-w-2xl">
+            Designed to be low‑friction for individual engineers, and predictable for teams.
+          </p>
+        </div>
+        <div class="grid gap-6 md:grid-cols-3">
+          <article class="pricing-card p-6 reveal reveal-stagger-1" data-reveal>
+            <h3 class="text-sm font-semibold text-slate-100 mb-1">Anonymous</h3>
+            <p class="text-xs text-slate-400 mb-4">Paste‑only estimates</p>
+            <div class="text-2xl font-semibold text-slate-50 mb-4">$0</div>
+            <ul class="text-xs text-slate-300 space-y-2 mb-4">
+              <li>• Paste Terraform into the browser</li>
+              <li>• Local, ephemeral estimates</li>
+              <li>• No sign‑up required</li>
+            </ul>
+            <a href="#try-it" class="btn-secondary-glass w-full justify-center text-center">Try now</a>
+          </article>
+          <article class="pricing-card p-6 border-accent1/60 shadow-[0_0_60px_rgba(79,70,229,0.55)] reveal reveal-stagger-2" data-reveal>
+            <div class="flex items-center justify-between mb-1">
+              <h3 class="text-sm font-semibold text-slate-100">Teams</h3>
+              <span class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-[0.65rem] uppercase tracking-[0.16em] text-emerald-300">
+                Coming soon
+              </span>
+            </div>
+            <p class="text-xs text-slate-400 mb-4">GitHub + shared estimates</p>
+            <div class="text-2xl font-semibold text-slate-50 mb-4">TBD</div>
+            <ul class="text-xs text-slate-300 space-y-2 mb-4">
+              <li>• GitHub repo analysis</li>
+              <li>• Saved scenarios and timelines</li>
+              <li>• Shared, read‑only estimate links</li>
+            </ul>
+            <a href="mailto:founder@example.com" class="btn-primary-glow w-full justify-center text-center">Talk about teams</a>
+          </article>
+          <article class="pricing-card p-6 reveal reveal-stagger-3" data-reveal>
+            <h3 class="text-sm font-semibold text-slate-100 mb-1">Custom</h3>
+            <p class="text-xs text-slate-400 mb-4">High‑volume or enterprise</p>
+            <div class="text-2xl font-semibold text-slate-50 mb-4">Let’s chat</div>
+            <ul class="text-xs text-slate-300 space-y-2 mb-4">
+              <li>• Deeper integrations</li>
+              <li>• Custom modeling & assumptions</li>
+              <li>• Security review & SSO</li>
+            </ul>
+            <a href="mailto:founder@example.com" class="btn-secondary-glass w-full justify-center text-center">Contact</a>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ SECTION -->
+    <section class="py-16 md:py-20" id="faq">
+      <div class="section-max">
+        <div class="mb-8 md:mb-10 reveal" data-reveal>
+          <span class="badge-pill mb-4 inline-flex">FAQ</span>
+          <h2 class="hero-headline-display text-2xl md:text-3xl mb-4">Questions teams actually ask.</h2>
+          <p class="hero-subheadline-display max-w-2xl">
+            A few details that tend to come up in early conversations.
+          </p>
+        </div>
+        <div class="space-y-3">
+          <div class="faq-item-card px-4 md:px-5 py-3 reveal reveal-stagger-1 faq-panel" data-reveal data-open="false">
+            <button class="faq-toggle text-left w-full text-sm" type="button" data-faq-toggle>
+              <span>Do you send my Terraform anywhere?</span>
+              <span class="faq-toggle-icon text-slate-400">›</span>
+            </button>
+            <div class="pb-2 text-xs text-slate-400 hidden" data-faq-body>
+              In anonymous mode, Terraform is processed only for the duration of the request; it isn’t stored by default.
+              When you connect GitHub, only the necessary metadata and configuration are analyzed for estimates.
+            </div>
+          </div>
+          <div class="faq-item-card px-4 md:px-5 py-3 reveal reveal-stagger-2 faq-panel" data-reveal data-open="false">
+            <button class="faq-toggle text-left w-full text-sm" type="button" data-faq-toggle>
+              <span>How accurate are the estimates?</span>
+              <span class="faq-toggle-icon text-slate-400">›</span>
+            </button>
+            <div class="pb-2 text-xs text-slate-400 hidden" data-faq-body>
+              Estimates use official cloud pricing APIs and explicit assumptions. Confidence labels and unpriced resources
+              call out uncertainty so you can treat this as directional, not as a bill.
+            </div>
+          </div>
+          <div class="faq-item-card px-4 md:px-5 py-3 reveal reveal-stagger-3 faq-panel" data-reveal data-open="false">
+            <button class="faq-toggle text-left w-full text-sm" type="button" data-faq-toggle>
+              <span>Can this optimize or change my infrastructure?</span>
+              <span class="faq-toggle-icon text-slate-400">›</span>
+            </button>
+            <div class="pb-2 text-xs text-slate-400 hidden" data-faq-body>
+              No. This product is advisory only. It never pushes changes to your infrastructure — it just helps you reason about cost.
+                </div>
+            </div>
+        </div>
+        </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="pt-10 pb-8 mt-6 border-t border-slate-800/80">
+      <div class="section-max">
+        <div class="section-divider mb-6"></div>
+        <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-xs text-slate-500">
+          <p class="max-w-xl">
+            This tool provides cost estimates based on infrastructure configuration, assumptions, and publicly available pricing information.
+            It is <strong>NOT</strong> an official cloud provider bill. Actual costs may vary.
+          </p>
+          <p class="text-slate-500/90">Pre-bill cloud cost clarity.</p>
+        </div>
+        </div>
+    </footer>
+
+    <!-- SHARE MODAL (from original) -->
+    <div id="share-modal" class="share-modal" role="dialog" aria-labelledby="share-title" aria-modal="true" style="display: none;">
+        <div class="share-modal-overlay"></div>
+        <div class="share-modal-content">
+            <div class="share-header">
+                <h2 id="share-title" class="share-title">Share Estimate</h2>
+                <button class="share-close" aria-label="Close share modal" id="share-close-btn">
+                    <span aria-hidden="true">×</span>
+                </button>
+            </div>
+            <div class="share-body">
+                <p class="share-description">
+                    Create a read-only link to share this estimate with your team.
+                    The link will expire in 24 hours.
+                </p>
+                <div class="share-url-container">
+                    <input 
+                        type="text" 
+                        id="share-url-input" 
+                        class="share-url-input"
+                        readonly
+                        value="Generating share link..."
+                    />
+                    <button id="copy-share-link" class="copy-button">Copy</button>
+                </div>
+            </div>
+            <div class="share-footer">
+                <button class="share-close-btn" id="share-close-btn-footer">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- EXPLAINER MODAL (from original) -->
+    <div id="explainer-modal" class="explainer-modal" role="dialog" aria-labelledby="explainer-title" aria-modal="true" style="display: none;">
+        <div class="explainer-modal-overlay"></div>
+        <div class="explainer-modal-content">
+            <div class="explainer-header">
+                <h2 id="explainer-title" class="explainer-title">How This Estimate Works</h2>
+                <button class="explainer-close" aria-label="Close explainer" id="explainer-close-btn">
+                    <span aria-hidden="true">×</span>
+                </button>
+            </div>
+            <div class="explainer-body">
+                <div class="explainer-section">
+                    <h3 class="explainer-section-title">What is this estimate?</h3>
+                    <p class="explainer-section-content">
+                        This tool analyzes your Terraform configuration and provides a monthly cost estimate based on publicly available cloud provider pricing. 
+                        It's designed to help you understand costs <strong>before</strong> deployment, when you can still make changes to your infrastructure design.
+                    </p>
+                </div>
+                
+                <div class="explainer-section">
+                    <h3 class="explainer-section-title">How are costs calculated?</h3>
+                    <p class="explainer-section-content">
+                        Costs are calculated using:
+                        <strong>Cloud provider pricing APIs</strong> for current rates,
+                        <strong>Resource configurations</strong> from your Terraform code (instance types, storage sizes, etc.),
+                        and <strong>Reasonable assumptions</strong> for usage patterns (like 730 hours/month for compute instances).
+                        All assumptions are clearly shown in the estimate.
+                    </p>
+                </div>
+                
+                <div class="explainer-section">
+                    <h3 class="explainer-section-title">What assumptions are involved?</h3>
+                    <p class="explainer-section-content">
+                        Common assumptions include: compute instances running 24/7 (730 hours/month), 
+                        default data transfer patterns, standard storage configurations, and provider-default regions when not specified.
+                        These assumptions are explicitly listed for each resource, so you can see what's included in the estimate.
+                    </p>
+                </div>
+                
+                <div class="explainer-section">
+                    <h3 class="explainer-section-title">What happens when I change a scenario?</h3>
+                    <p class="explainer-section-content">
+                        Scenario comparisons let you explore "what if" questions: different regions, autoscaling patterns, or traffic assumptions.
+                        The base estimate never changes—scenarios create a new estimate alongside it, showing the cost difference (delta).
+                        This helps you understand how different choices affect costs without losing your original estimate.
+                    </p>
+                </div>
+                
+                <div class="explainer-section">
+                    <h3 class="explainer-section-title">What this is not</h3>
+                    <p class="explainer-section-content">
+                        This is <strong>not</strong> an official cloud provider bill, a cost optimization tool, or a billing system.
+                        It's an estimation tool for planning and team conversations. Actual costs will vary based on real usage, 
+                        reserved instances, discounts, and other factors not captured here.
+                    </p>
+                </div>
+                
+                <div class="explainer-section">
+                    <h3 class="explainer-section-title">How should I use this?</h3>
+                    <p class="explainer-section-content">
+                        Use this during infrastructure design and planning to:
+                        understand cost implications before deployment,
+                        have informed conversations with your team about trade-offs,
+                        explore different scenarios safely, and
+                        share estimates with stakeholders who need cost visibility.
+                        Think of it as a conversation starter, not a final answer.
+                    </p>
+                </div>
+            </div>
+            <div class="explainer-footer">
+                <button class="explainer-dismiss-btn" id="explainer-dismiss-btn">Got it</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Read-only banner for shared views -->
+    <div id="read-only-banner" class="read-only-banner" style="display: none;">
+        <div class="read-only-banner-content">
+            <span class="read-only-icon">🔒</span>
+            <span class="read-only-text">Read-only shared estimate</span>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+    <script src="/static/ui.js"></script>
+</body>
+</html>

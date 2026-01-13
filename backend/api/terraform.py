@@ -1,10 +1,14 @@
 """
 API routes for Terraform file operations.
 """
-from typing import Dict, Any
-from fastapi import APIRouter, Request, HTTPException
+from typing import Dict, Any, List, Optional
+from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, Field
 import httpx
+import zipfile
+import tempfile
+from pathlib import Path
+import logging
 
 from backend.services.github_client import GitHubClient
 from backend.services.terraform_interpreter import TerraformInterpreter, TerraformInterpreterError
@@ -17,6 +21,7 @@ from backend.domain.scenario_models import ScenarioEstimateResult
 from backend.utils.fs import extract_and_scan_terraform_files
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -61,6 +66,11 @@ class InsightsRequest(BaseModel):
     intent_graph: Dict[str, Any] = Field(..., description="Intent graph from Terraform interpretation")
     base_estimate: Dict[str, Any] = Field(..., description="Base cost estimate")
     scenario_result: Optional[Dict[str, Any]] = Field(None, description="Optional scenario comparison result")
+
+
+class LocalEstimateRequest(BaseModel):
+    """Request model for local (anonymous) cost estimation."""
+    terraform_files: List[TerraformFile] = Field(..., description="List of Terraform files to estimate")
 
 
 def get_access_token_from_session(request: Request) -> str:
@@ -377,7 +387,7 @@ async def estimate_scenario(
     - Autoscaling average override (compare with different scaling assumptions)
     - Users override (for request-based services, placeholder for now)
     
-    Requires authentication via GitHub OAuth.
+    Authentication is optional - works for both authenticated and anonymous users.
     
     Args:
         request: FastAPI request object
@@ -387,12 +397,16 @@ async def estimate_scenario(
         JSON response with base estimate, scenario estimate, and deltas
     
     Raises:
-        HTTPException: If authentication fails, invalid input,
-                       pricing API fails, or other errors occur
+        HTTPException: If invalid input, pricing API fails, or other errors occur
     """
     try:
-        # Authenticate
-        get_access_token_from_session(request)
+        # Authentication is optional for scenario estimation
+        # Try to get token, but don't fail if not present
+        try:
+            get_access_token_from_session(request)
+        except HTTPException:
+            # No authentication - that's OK for anonymous mode
+            pass
         
         # Validate input
         intent_graph = scenario_request.intent_graph
@@ -573,4 +587,225 @@ async def generate_cost_insights(
         raise HTTPException(
             status_code=500,
             detail="An unexpected error occurred while generating insights"
+        ) from error
+
+
+@router.post("/api/terraform/estimate/local")
+async def estimate_local_terraform(
+    request: Request,
+    local_request: Optional[LocalEstimateRequest] = None,
+    terraform_text: Optional[str] = Form(None),
+    terraform_file: Optional[UploadFile] = File(None)
+) -> Dict[str, Any]:
+    """
+    Estimate costs from locally provided Terraform files (no authentication required).
+    
+    Accepts Terraform files via:
+    - JSON body with terraform_files array
+    - Form data with terraform_text (raw Terraform code)
+    - Form data with terraform_file (uploaded .tf or .zip file)
+    
+    Uses the same parsing, interpretation, and pricing pipeline as authenticated endpoints.
+    Does NOT store Terraform source code.
+    
+    Args:
+        request: FastAPI request object
+        local_request: Optional JSON body with Terraform files
+        terraform_text: Optional raw Terraform code from form
+        terraform_file: Optional uploaded file (.tf or .zip)
+    
+    Returns:
+        JSON response with cost estimate, intent graph, and insights
+    
+    Raises:
+        HTTPException: If input is invalid, parsing fails, or pricing fails
+    """
+    logger.info("estimate_local_terraform: Entry - input_method=%s", 
+                "json" if local_request else "form_text" if terraform_text else "form_file" if terraform_file else "none")
+    
+    try:
+        # Extract optional AI API key from header (never logged)
+        ai_api_key = request.headers.get("X-AI-API-Key")
+        has_ai_key = bool(ai_api_key)
+        logger.info("estimate_local_terraform: AI key provided=%s", has_ai_key)
+        
+        terraform_files = []
+        
+        # Handle JSON body request
+        if local_request and local_request.terraform_files:
+            terraform_files = [
+                {"path": file.path, "content": file.content}
+                for file in local_request.terraform_files
+            ]
+        
+        # Handle form data with text
+        elif terraform_text:
+            terraform_files = [
+                {"path": "main.tf", "content": terraform_text}
+            ]
+        
+        # Handle form data with file upload
+        elif terraform_file:
+            file_content = await terraform_file.read()
+            file_name = terraform_file.filename or "upload.tf"
+            
+            # Handle ZIP files
+            if file_name.endswith(".zip"):
+                try:
+                    # Extract Terraform files from ZIP
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        temp_zip_path = Path(temp_dir) / "upload.zip"
+                        temp_zip_path.write_bytes(file_content)
+                        
+                        with zipfile.ZipFile(temp_zip_path, "r") as zip_ref:
+                            zip_ref.extractall(temp_dir)
+                        
+                        # Find all .tf files
+                        from backend.utils.fs import find_terraform_files, read_terraform_file
+                        tf_files = find_terraform_files(Path(temp_dir))
+                        
+                        if not tf_files:
+                            raise HTTPException(
+                                status_code=400,
+                                detail="No Terraform files found in ZIP archive"
+                            )
+                        
+                        for tf_file in tf_files:
+                            try:
+                                relative_path = tf_file.relative_to(Path(temp_dir))
+                                content = read_terraform_file(tf_file)
+                                terraform_files.append({
+                                    "path": str(relative_path),
+                                    "content": content
+                                })
+                            except (UnicodeDecodeError, OSError):
+                                continue
+                
+                except zipfile.BadZipFile:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid ZIP file"
+                    )
+            
+            # Handle single .tf file
+            elif file_name.endswith(".tf"):
+                try:
+                    content = file_content.decode("utf-8")
+                    terraform_files = [
+                        {"path": file_name, "content": content}
+                    ]
+                except UnicodeDecodeError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="File must be valid UTF-8 text"
+                    )
+            
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="File must be .tf or .zip"
+                )
+        
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Must provide terraform_files (JSON), terraform_text (form), or terraform_file (upload)"
+            )
+        
+        if not terraform_files:
+            logger.warning("estimate_local_terraform: No Terraform files provided")
+            raise HTTPException(
+                status_code=400,
+                detail="No Terraform files provided"
+            )
+        
+        logger.info("estimate_local_terraform: Parsed %d Terraform file(s)", len(terraform_files))
+        
+        # Interpret Terraform files
+        logger.info("estimate_local_terraform: Stage=intent_graph - Starting Terraform interpretation")
+        mistral_client = MistralClient(api_key=ai_api_key) if ai_api_key else None
+        interpreter = TerraformInterpreter(mistral_client=mistral_client)
+        
+        try:
+            intent_graph = await interpreter.interpret(terraform_files)
+            logger.info("estimate_local_terraform: Stage=intent_graph - Success - resources=%d", 
+                       len(intent_graph.get("resources", [])))
+        except TerraformInterpreterError as error:
+            logger.error("estimate_local_terraform: Stage=intent_graph - TerraformInterpreterError - %s: %s", 
+                        type(error).__name__, str(error))
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to interpret Terraform files: {str(error)}"
+            ) from error
+        except MistralAPIError as error:
+            error_msg = str(error).lower()
+            logger.error("estimate_local_terraform: Stage=intent_graph - MistralAPIError - %s: %s", 
+                        type(error).__name__, str(error))
+            if "key" in error_msg or "unauthorized" in error_msg or "401" in error_msg or "403" in error_msg:
+                raise HTTPException(
+                    status_code=401,
+                    detail="AI provider rejected the provided API key."
+                ) from error
+            raise HTTPException(
+                status_code=502,
+                detail="Mistral AI service unavailable"
+            ) from error
+        
+        # Estimate costs
+        logger.info("estimate_local_terraform: Stage=pricing - Starting cost estimation")
+        estimator = CostEstimator()
+        try:
+            cost_estimate = await estimator.estimate(
+                intent_graph=intent_graph,
+                region_override=None,
+                autoscaling_average_override=None
+            )
+            logger.info("estimate_local_terraform: Stage=pricing - Success - total_cost=%.2f, line_items=%d, unpriced=%d",
+                       cost_estimate.total_monthly_cost_usd,
+                       len(cost_estimate.line_items),
+                       len(cost_estimate.unpriced_resources))
+        except CostEstimatorError as error:
+            logger.error("estimate_local_terraform: Stage=pricing - CostEstimatorError - %s: %s",
+                        type(error).__name__, str(error))
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to estimate costs: {str(error)}"
+            ) from error
+        
+        # Generate insights (optional, may fail if AI unavailable)
+        logger.info("estimate_local_terraform: Stage=insights - Starting insight generation")
+        insights = []
+        try:
+            mistral_client_insights = MistralClient(api_key=ai_api_key) if ai_api_key else None
+            insights_service = CostInsightsService(mistral_client=mistral_client_insights)
+            insight_response = await insights_service.generate_insights_from_dicts(
+                intent_graph=intent_graph,
+                base_estimate_dict=cost_estimate.to_dict(),
+                scenario_result_dict=None
+            )
+            insights = insight_response.to_dict().get("insights", [])
+            logger.info("estimate_local_terraform: Stage=insights - Success - insights=%d", len(insights))
+        except Exception as error:
+            # Insights are optional, continue without them
+            logger.warning("estimate_local_terraform: Stage=insights - Failed (optional) - %s: %s",
+                         type(error).__name__, str(error))
+        
+        # Build response
+        logger.info("estimate_local_terraform: Returning response - status=ok")
+        return {
+            "status": "ok",
+            "estimate": cost_estimate.to_dict(),
+            "intent_graph": intent_graph,
+            "insights": insights
+        }
+    
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as error:
+        logger.error("estimate_local_terraform: Stage=unknown - Unexpected error - %s: %s",
+                    type(error).__name__, str(error), exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred while estimating costs"
         ) from error

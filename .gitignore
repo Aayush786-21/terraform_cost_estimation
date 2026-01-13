@@ -49,3 +49,6 @@ htmlcov/
 
 # Logs
 *.log
+
+# Security/Credentials
+terraform.pem

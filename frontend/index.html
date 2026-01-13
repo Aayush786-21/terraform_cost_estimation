@@ -4,12 +4,68 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Terraform Cost Estimation</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
     <div class="container">
+        <!-- TERRAFORM INPUT SECTION (Anonymous Mode) -->
+        <section id="terraform-input-section" class="terraform-input-section">
+            <div class="terraform-input-content">
+                <h2 class="section-title">Get Started</h2>
+                <p class="section-description">
+                    Paste your Terraform code or upload files to get an immediate cost estimate.
+                </p>
+                
+                <div class="terraform-input-tabs">
+                    <button class="input-tab active" data-tab="paste">Paste Terraform</button>
+                    <button class="input-tab" data-tab="upload">Upload Files</button>
+                </div>
+                
+                <div id="paste-tab" class="input-tab-content active">
+                    <textarea 
+                        id="terraform-textarea" 
+                        class="terraform-textarea"
+                        placeholder="Paste your Terraform configuration here...&#10;&#10;Example:&#10;resource &quot;aws_instance&quot; &quot;web&quot; {&#10;  ami           = &quot;ami-0c55b159cbfafe1f0&quot;&#10;  instance_type = &quot;t3.micro&quot;&#10;  region        = &quot;us-east-1&quot;&#10;}"
+                        rows="12"
+                    ></textarea>
+                    <button id="estimate-from-text-btn" class="estimate-button">
+                        Estimate Costs
+                    </button>
+                </div>
+                
+                <div id="upload-tab" class="input-tab-content">
+                    <div class="file-upload-area" id="file-upload-area">
+                        <input 
+                            type="file" 
+                            id="terraform-file-input" 
+                            accept=".tf,.zip"
+                            multiple
+                            style="display: none;"
+                        />
+                        <div class="file-upload-prompt">
+                            <span class="upload-icon">📁</span>
+                            <p>Click to select .tf or .zip files</p>
+                            <p class="upload-hint">Or drag and drop files here</p>
+                        </div>
+                    </div>
+                    <div id="file-list" class="file-list" style="display: none;"></div>
+                    <button id="estimate-from-files-btn" class="estimate-button" style="display: none;">
+                        Estimate Costs
+                    </button>
+                </div>
+                
+                <div class="github-note">
+                    <p>
+                        <strong>Optional:</strong> 
+                        <a href="/auth/login" class="github-link">Connect GitHub</a> 
+                        to analyze a repository directly.
+                    </p>
+                </div>
+            </div>
+        </section>
+        
         <!-- SECTION A: HERO / SUMMARY -->
-        <section class="hero-section">
+        <section class="hero-section" id="results-section" style="display: none;">
             <div class="hero-content">
                 <h1 class="hero-title">Estimated Monthly Cost</h1>
                 <div class="cost-display">
@@ -319,6 +375,6 @@
         </p>
     </footer>
 
-    <script src="app.js"></script>
+    <script src="/static/app.js"></script>
 </body>
 </html>

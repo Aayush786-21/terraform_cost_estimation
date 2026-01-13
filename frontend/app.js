@@ -3,10 +3,19 @@
  * Redesigned with calm, insight-first approach
  */
 
+// API base URL - use relative paths since frontend and backend are on same port
+const API_BASE_URL = '';
+
+// Helper function for API requests
+function apiUrl(path) {
+    return API_BASE_URL + path;
+}
+
 // Global state for estimates and scenarios
 let baseEstimate = null;
 let currentScenario = null;
 let currentIntentGraph = null;
+let uploadedFiles = [];
 
 // State for insight focus
 let focusedInsightId = null;
@@ -1269,8 +1278,21 @@ async function applyScenario(scenarioParams) {
             }
         });
         
-        const response = await apiRequest('/api/terraform/estimate/scenario', {
+        // Use local endpoint if no auth (intent_graph available from local estimate)
+        // Otherwise use authenticated endpoint
+        const endpoint = currentIntentGraph 
+            ? apiUrl('/api/terraform/estimate/scenario')
+            : apiUrl('/api/terraform/estimate/scenario');
+        
+        // For anonymous mode, we need to make scenario endpoint work without auth
+        // For now, we'll try the scenario endpoint (it may fail if auth required)
+        // TODO: Make scenario endpoint work without auth, or create local scenario endpoint
+        const response = await fetch(endpoint, {
             method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-AI-API-Key': getAIAPIKey() || ''
+            },
             body: JSON.stringify({
                 intent_graph: currentIntentGraph,
                 scenario: scenarioParams
@@ -2060,7 +2082,7 @@ async function createShareSnapshot() {
         }
 
         // Call API
-        const response = await fetch('/api/share', {
+        const response = await fetch(apiUrl('/api/share'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -2359,31 +2381,338 @@ function initExplainer() {
 }
 
 /**
+ * Initialize Terraform input section
+ */
+function initTerraformInput() {
+    // Support both landing.html and index.html structures
+    const pasteTab = document.querySelector('[data-tab="paste"]');
+    const uploadTab = document.querySelector('[data-tab="upload"]');
+    const pasteContent = document.getElementById('paste-tab');
+    const uploadContent = document.getElementById('upload-tab');
+    const textarea = document.getElementById('terraform-textarea');
+    const fileInput = document.getElementById('terraform-file-input');
+    const fileUploadArea = document.getElementById('file-upload-area');
+    const fileList = document.getElementById('file-list');
+    const estimateFromTextBtn = document.getElementById('estimate-from-text-btn');
+    const estimateFromFilesBtn = document.getElementById('estimate-from-files-btn');
+    
+    // Tab switching
+    if (pasteTab && uploadTab) {
+        pasteTab.addEventListener('click', () => {
+            pasteTab.classList.add('active');
+            uploadTab.classList.remove('active');
+            pasteContent.classList.add('active');
+            uploadContent.classList.remove('active');
+        });
+        
+        uploadTab.addEventListener('click', () => {
+            uploadTab.classList.add('active');
+            pasteTab.classList.remove('active');
+            uploadContent.classList.add('active');
+            pasteContent.classList.remove('active');
+        });
+    }
+    
+    // File upload handling
+    if (fileUploadArea && fileInput) {
+        fileUploadArea.addEventListener('click', () => fileInput.click());
+        
+        fileUploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileUploadArea.classList.add('dragover');
+        });
+        
+        fileUploadArea.addEventListener('dragleave', () => {
+            fileUploadArea.classList.remove('dragover');
+        });
+        
+        fileUploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileUploadArea.classList.remove('dragover');
+            const files = Array.from(e.dataTransfer.files);
+            handleFiles(files);
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            handleFiles(files);
+        });
+    }
+    
+    function handleFiles(files) {
+        uploadedFiles = files.filter(f => f.name.endsWith('.tf') || f.name.endsWith('.zip'));
+        
+        if (uploadedFiles.length === 0) {
+            alert('Please select .tf or .zip files only');
+            return;
+        }
+        
+        // Display file list
+        if (fileList) {
+            fileList.innerHTML = '';
+            fileList.style.display = 'block';
+            
+            uploadedFiles.forEach((file, index) => {
+                const item = document.createElement('div');
+                item.className = 'file-item';
+                item.innerHTML = `
+                    <span class="file-item-name">${file.name}</span>
+                    <button class="file-item-remove" data-index="${index}">×</button>
+                `;
+                
+                const removeBtn = item.querySelector('.file-item-remove');
+                removeBtn.addEventListener('click', () => {
+                    uploadedFiles.splice(index, 1);
+                    handleFiles(uploadedFiles);
+                });
+                
+                fileList.appendChild(item);
+            });
+        }
+        
+        if (estimateFromFilesBtn) {
+            estimateFromFilesBtn.style.display = 'block';
+        }
+    }
+    
+    // Estimate from text
+    if (estimateFromTextBtn) {
+        estimateFromTextBtn.addEventListener('click', async () => {
+            const text = textarea?.value.trim();
+            if (!text) {
+                alert('Please paste some Terraform code');
+                return;
+            }
+            
+            await estimateFromLocal(text);
+        });
+    }
+    
+    // Estimate from files
+    if (estimateFromFilesBtn) {
+        estimateFromFilesBtn.addEventListener('click', async () => {
+            if (uploadedFiles.length === 0) {
+                alert('Please upload at least one file');
+                return;
+            }
+            
+            await estimateFromLocal(null, uploadedFiles);
+        });
+    }
+}
+
+/**
+ * Estimate costs from local Terraform input
+ */
+async function estimateFromLocal(terraformText = null, files = null) {
+    try {
+        // Show loading state
+        const estimateBtn = terraformText 
+            ? document.getElementById('estimate-from-text-btn')
+            : document.getElementById('estimate-from-files-btn');
+        if (estimateBtn) {
+            estimateBtn.disabled = true;
+            estimateBtn.textContent = 'Calculating...';
+        }
+        
+        let response;
+        
+        if (terraformText) {
+            // Send as form data
+            const formData = new FormData();
+            formData.append('terraform_text', terraformText);
+            
+            response = await fetch(apiUrl('/api/terraform/estimate/local'), {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-AI-API-Key': getAIAPIKey() || ''
+                }
+            });
+        } else if (files && files.length > 0) {
+            // Send files as form data
+            const formData = new FormData();
+            
+            if (files.length === 1 && files[0].name.endsWith('.zip')) {
+                formData.append('terraform_file', files[0]);
+            } else {
+                // For multiple files, create a ZIP (simplified: just send first file for now)
+                // In production, you might want to create a ZIP client-side
+                formData.append('terraform_file', files[0]);
+            }
+            
+            response = await fetch(apiUrl('/api/terraform/estimate/local'), {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-AI-API-Key': getAIAPIKey() || ''
+                }
+            });
+        } else {
+            throw new Error('No Terraform input provided');
+        }
+        
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ detail: 'Failed to estimate costs' }));
+            throw new Error(error.detail || 'Failed to estimate costs');
+        }
+        
+        const data = await response.json();
+        
+        if (data.status === 'ok') {
+            // Store intent graph for scenario API calls
+            currentIntentGraph = data.intent_graph;
+            
+            // Render estimate
+            const estimateData = {
+                estimate: data.estimate,
+                insights: data.insights || []
+            };
+            
+            renderEstimate(estimateData);
+            
+            // Hide input section, show results (support both landing.html and index.html)
+            const inputSection = document.getElementById('terraform-input-section') || document.querySelector('.try-it');
+            const resultsSection = document.getElementById('results-section');
+            if (inputSection) inputSection.style.display = 'none';
+            if (resultsSection) resultsSection.style.display = 'block';
+            
+            // Scroll to results
+            if (resultsSection) {
+                resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+    } catch (error) {
+        console.error('Failed to estimate costs:', error);
+        alert(`Failed to estimate costs: ${error.message}`);
+    } finally {
+        // Reset button state
+        const estimateBtn = terraformText 
+            ? document.getElementById('estimate-from-text-btn')
+            : document.getElementById('estimate-from-files-btn');
+        if (estimateBtn) {
+            estimateBtn.disabled = false;
+            estimateBtn.textContent = 'Estimate Costs';
+        }
+    }
+}
+
+/**
+ * Check if we're in share mode (via URL parameter)
+ */
+function checkShareMode() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const shareId = urlParams.get('share');
+    
+    if (shareId) {
+        // Load shared snapshot
+        loadSharedSnapshot(shareId);
+        return true;
+    }
+    
+    // Check if URL path is /share/{id}
+    const pathMatch = window.location.pathname.match(/\/share\/([a-f0-9-]+)/);
+    if (pathMatch) {
+        loadSharedSnapshot(pathMatch[1]);
+        return true;
+    }
+    
+    return false;
+}
+
+/**
+ * Load shared snapshot data
+ */
+async function loadSharedSnapshot(snapshotId) {
+    try {
+        const response = await fetch(apiUrl(`/api/share/${snapshotId}`));
+        if (!response.ok) {
+            throw new Error('Failed to load shared estimate');
+        }
+        
+        const data = await response.json();
+        
+        // Hide input section, show results
+        const inputSection = document.getElementById('terraform-input-section');
+        const resultsSection = document.getElementById('results-section');
+        if (inputSection) inputSection.style.display = 'none';
+        if (resultsSection) resultsSection.style.display = 'block';
+        
+        // Add read-only banner
+        addReadOnlyBanner();
+        
+        // Render the estimate
+        if (data.estimate) {
+            renderEstimate({
+                estimate: data.estimate,
+                insights: data.insights || [],
+                scenario_result: data.scenario_result || null
+            });
+        }
+        
+        // Scroll to results
+        resultsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+        console.error('Failed to load shared estimate:', error);
+        alert('Failed to load shared estimate. The link may have expired or is invalid.');
+    }
+}
+
+/**
+ * Add read-only banner for shared views
+ */
+function addReadOnlyBanner() {
+    // Remove existing banner if any
+    const existingBanner = document.getElementById('read-only-banner');
+    if (existingBanner) {
+        existingBanner.remove();
+    }
+    
+    // Create banner
+    const banner = document.createElement('div');
+    banner.id = 'read-only-banner';
+    banner.className = 'read-only-banner';
+    banner.innerHTML = `
+        <div class="read-only-banner-content">
+            <span class="read-only-icon">🔒</span>
+            <span class="read-only-text">Read-only shared estimate</span>
+        </div>
+    `;
+    
+    // Insert at top of body
+    document.body.insertBefore(banner, document.body.firstChild);
+    
+        // Hide interactive controls (support both landing.html and index.html)
+        const controlsToHide = [
+            '#terraform-input-section',
+            '.try-it',
+            '.hero-actions',
+            '.region-comparison-control',
+            '.traffic-assumptions',
+            '.autoscaling-control',
+            '#ai-key-section'
+        ];
+    
+    controlsToHide.forEach(selector => {
+        const elements = document.querySelectorAll(selector);
+        elements.forEach(el => {
+            el.style.display = 'none';
+        });
+    });
+}
+
+/**
  * Initialize app
  */
 function init() {
-    // Render with sample data on load
-    const sampleData = {
-        ...SAMPLE_ESTIMATE,
-        insights: SAMPLE_INSIGHTS
-    };
+    // Check if we're in share mode first
+    if (checkShareMode()) {
+        // Share mode - don't initialize input controls
+        return;
+    }
     
-    // Create sample intent graph (for scenario API calls)
-    // In real app, this would come from the interpret API
-    currentIntentGraph = {
-        providers: ['aws', 'azure'],
-        resources: sampleData.estimate.line_items.map(item => ({
-            cloud: item.cloud,
-            category: item.category || 'compute',
-            service: item.service,
-            terraform_type: item.terraform_type,
-            name: item.resource_name,
-            region: { source: 'explicit', value: item.region },
-            count_model: { type: 'fixed', value: 1 }
-        }))
-    };
-    
-    renderEstimate(sampleData);
+    // Initialize Terraform input section first
+    initTerraformInput();
     
     // Initialize interactive components
     initBreakdownToggle();
@@ -2393,13 +2722,26 @@ function init() {
     initExportControls();
     initShareControls();
     
-    // In the future, this could fetch from the API:
-    // apiRequest('/api/terraform/estimate', { method: 'POST', ... })
-    //   .then(res => res.json())
-    //   .then(data => {
-    //       currentIntentGraph = data.intent_graph; // Store from interpret
-    //       renderEstimate(data);
-    //   });
+    // Don't render sample data on load - wait for user input
+    // Results section starts hidden (support both landing.html and index.html)
+    const resultsSection = document.getElementById('results-section');
+    if (resultsSection) {
+        resultsSection.style.display = 'none';
+    }
+    
+    // Add smooth scroll behavior for anchor links (landing page)
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            const href = this.getAttribute('href');
+            if (href !== '#' && href.startsWith('#')) {
+                e.preventDefault();
+                const target = document.querySelector(href);
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }
+        });
+    });
 }
 
 // Initialize when DOM is ready

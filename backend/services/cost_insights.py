@@ -62,6 +62,34 @@ class CostInsightsService:
         
         return resources
     
+    def _extract_resource_summary_from_dict(self, estimate_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract resource summary from cost estimate dictionary.
+        Only includes visible cost data, no secrets or internals.
+        
+        Args:
+            estimate_dict: Cost estimate dictionary
+        
+        Returns:
+            List of resource summaries
+        """
+        resources = []
+        
+        line_items = estimate_dict.get("line_items", [])
+        for item in line_items:
+            resources.append({
+                "resource_name": item.get("resource_name"),
+                "terraform_type": item.get("terraform_type"),
+                "cloud": item.get("cloud"),
+                "service": item.get("service"),
+                "region": item.get("region"),
+                "monthly_cost_usd": item.get("monthly_cost_usd", 0),
+                "confidence": item.get("confidence", "low"),
+                "assumptions": item.get("assumptions", []),
+            })
+        
+        return resources
+    
     def _build_insights_prompt(
         self,
         intent_graph: Dict[str, Any],
