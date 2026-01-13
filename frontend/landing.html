@@ -384,15 +384,34 @@ resource "aws_rds_instance" "db" {
     </section>
 
     <!-- RESULTS SECTION (Hidden initially) -->
-    <section class="results-section" id="results-section" style="display: none;">
+    <section class="results-section" id="results-section" style="display: block;">
         <div class="container">
             <!-- SECTION A: HERO / SUMMARY -->
             <section class="hero-section" id="hero-section-results">
                 <div class="hero-content">
-                    <h1 class="hero-title">Estimated Monthly Cost</h1>
+                    <h1 class="hero-title">Estimated Cost</h1>
                     <div class="cost-display">
                         <span id="total-cost" class="cost-amount">$0.00</span>
+                        <span id="cost-unit-label" class="cost-unit-label">/month</span>
                         <span class="estimate-badge">Assumption-based estimate</span>
+                    </div>
+                    <div class="time-unit-selector">
+                        <label for="time-unit" class="time-unit-label">Time Unit:</label>
+                        <select id="time-unit" class="time-unit-select">
+                            <option value="monthly">Monthly</option>
+                            <option value="hourly">Hourly</option>
+                            <option value="daily">Daily</option>
+                            <option value="hours">Custom Hours</option>
+                            <option value="users">Per User</option>
+                        </select>
+                        <input 
+                            type="number" 
+                            id="custom-value-input" 
+                            class="custom-value-input" 
+                            placeholder="Value"
+                            min="1"
+                            style="display: none;"
+                        />
                     </div>
                     <p class="hero-subtext">
                         Based on your infrastructure configuration and pricing assumptions
@@ -428,13 +447,10 @@ resource "aws_rds_instance" "db" {
                                 <span class="region-chevron">▼</span>
                             </div>
                             <div id="region-dropdown" class="region-dropdown" style="display: none;">
-                                <div class="region-dropdown-header">Compare with region:</div>
+                                <div class="region-dropdown-header">Select region:</div>
                                 <div class="region-options" id="region-options">
                                     <!-- Region options rendered here -->
                                 </div>
-                                <button id="compare-region-btn" class="compare-button" style="display: none;">
-                                    Compare with <span id="selected-region-name"></span>
-                                </button>
                             </div>
                         </div>
                         <div class="traffic-assumptions">

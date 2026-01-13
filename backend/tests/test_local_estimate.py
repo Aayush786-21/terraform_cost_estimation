@@ -64,7 +64,7 @@ async def test_local_estimate_returns_200_with_valid_terraform(client, sample_te
                 ],
                 region="us-east-1",
                 pricing_timestamp=datetime.now(),
-                coverage={"aws": "partial", "azure": "partial", "gcp": "not_supported_yet"}
+                coverage={"aws": "full", "azure": "not_supported_yet", "gcp": "not_supported_yet"}
             )
             mock_estimator.estimate = AsyncMock(return_value=mock_estimate)
             mock_estimator_class.return_value = mock_estimator

@@ -71,6 +71,7 @@ class InsightsRequest(BaseModel):
 class LocalEstimateRequest(BaseModel):
     """Request model for local (anonymous) cost estimation."""
     terraform_files: List[TerraformFile] = Field(..., description="List of Terraform files to estimate")
+    region_override: Optional[str] = Field(None, description="Optional region override for pricing")
 
 
 def get_access_token_from_session(request: Request) -> str:
@@ -751,13 +752,18 @@ async def estimate_local_terraform(
                 detail="Mistral AI service unavailable"
             ) from error
         
+        # Extract region override from request if provided
+        region_override = None
+        if local_request and hasattr(local_request, 'region_override'):
+            region_override = local_request.region_override
+        
         # Estimate costs
         logger.info("estimate_local_terraform: Stage=pricing - Starting cost estimation")
         estimator = CostEstimator()
         try:
             cost_estimate = await estimator.estimate(
                 intent_graph=intent_graph,
-                region_override=None,
+                region_override=region_override,
                 autoscaling_average_override=None
             )
             logger.info("estimate_local_terraform: Stage=pricing - Success - total_cost=%.2f, line_items=%d, unpriced=%d",

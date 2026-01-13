@@ -9,6 +9,7 @@ import logging
 from backend.domain.cost_models import CostEstimate, CostLineItem, UnpricedResource
 from backend.domain.scenario_models import ScenarioInput, ScenarioDeltaLineItem, ScenarioEstimateResult
 from backend.pricing.aws_pricing_client import AWSPricingClient, AWSPricingError
+from backend.pricing.aws_bulk_pricing import create_bulk_pricing_client, AWSBulkPricingClient
 from backend.pricing.azure_pricing_client import AzurePricingClient, AzurePricingError
 from backend.pricing.gcp_pricing_client import GCPPricingClient, GCPPricingError
 from backend.core.config import config
@@ -47,18 +48,26 @@ class CostEstimator:
             azure_client: Azure pricing client (creates new if None)
             gcp_client: GCP pricing client (creates new if None)
         """
-        # AWS client (may fallback to static pricing)
-        if aws_client is not None:
+        # AWS client: Try bulk pricing first (fast, cached), then API client (slower, but works)
+        # Bulk pricing is preferred for production use
+        self.aws_bulk_client = create_bulk_pricing_client()
+        if self.aws_bulk_client:
+            logger.info("Using AWS bulk pricing client (cached offer files)")
+            self.aws_client = None  # Don't need API client if bulk is available
+        elif aws_client is not None:
             self.aws_client = aws_client
+            self.aws_bulk_client = None
         else:
             try:
                 self.aws_client = AWSPricingClient()
+                self.aws_bulk_client = None
             except AWSPricingError as error:
                 logger.warning(
                     "AWS pricing client unavailable, falling back to static pricing: %s",
                     error,
                 )
                 self.aws_client = None
+                self.aws_bulk_client = None
 
         # Azure client (may fallback to static pricing)
         if azure_client is not None:
@@ -265,16 +274,34 @@ class CostEstimator:
             hourly_price: Optional[float] = None
             
             # Route to appropriate pricing method if client is available
-            if self.aws_client is not None:
+            # Prefer bulk pricing (fast, cached) over API client (slower, network-dependent)
+            if self.aws_bulk_client is not None:
+                if "EC2" in service or terraform_type == "aws_instance":
+                    hourly_price = await self.aws_bulk_client.get_ec2_instance_price(
+                        instance_type=instance_type,
+                        region=resolved_region
+                    )
+                elif "RDS" in service or terraform_type.startswith("aws_db"):
+                    # Extract engine from size_hint (e.g., {"engine": "mysql"}) or default to mysql
+                    engine = size_hint.get("engine", "mysql")
+                    hourly_price = await self.aws_bulk_client.get_rds_instance_price(
+                        instance_type=instance_type,
+                        region=resolved_region,
+                        engine=engine
+                    )
+            elif self.aws_client is not None:
                 if "EC2" in service or terraform_type == "aws_instance":
                     hourly_price = await self.aws_client.get_ec2_instance_price(
                         instance_type=instance_type,
                         region=resolved_region
                     )
                 elif "RDS" in service or terraform_type.startswith("aws_db"):
+                    # Extract engine from size_hint (e.g., {"engine": "mysql"}) or default to mysql
+                    engine = size_hint.get("engine", "mysql")
                     hourly_price = await self.aws_client.get_rds_instance_price(
                         instance_type=instance_type,
-                        region=resolved_region
+                        region=resolved_region,
+                        engine=engine
                     )
 
             # Fallback to static pricing if API client is missing or returned no price
@@ -572,8 +599,8 @@ class CostEstimator:
             Dictionary mapping cloud provider to coverage status
         """
         coverage = {
-            "aws": "partial",
-            "azure": "partial",
+            "aws": "full",  # AWS has comprehensive pricing support
+            "azure": "not_supported_yet",  # Azure not yet supported
             "gcp": "not_supported_yet"
         }
         
@@ -596,8 +623,12 @@ class CostEstimator:
             total = cloud_resources.get(cloud, 0)
             priced = cloud_priced.get(cloud, 0)
             
-            if cloud == "gcp":
+            if cloud == "gcp" or cloud == "azure":
+                # Azure and GCP not yet supported
                 coverage[cloud] = "not_supported_yet"
+            elif cloud == "aws":
+                # AWS always shows as "full" since we have comprehensive pricing support
+                coverage[cloud] = "full"
             elif total == 0:
                 # No resources for this cloud
                 continue

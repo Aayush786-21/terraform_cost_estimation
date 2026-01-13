@@ -296,7 +296,7 @@ function renderSummary(estimate) {
         const coverage = estimate.coverage || {};
         
         const clouds = [
-            { key: 'aws', label: 'AWS', value: coverage.aws },
+            { key: 'aws', label: 'AWS', value: coverage.aws || 'full' },
             { key: 'azure', label: 'Azure', value: coverage.azure },
             { key: 'gcp', label: 'GCP', value: coverage.gcp }
         ].filter(cloud => cloud.value);
@@ -304,7 +304,18 @@ function renderSummary(estimate) {
         clouds.forEach(cloud => {
             const badge = document.createElement('span');
             badge.className = `coverage-badge ${cloud.value}`;
-            badge.textContent = `${cloud.label}: ${cloud.value}`;
+            
+            // Format status text for display
+            let displayStatus = cloud.value;
+            if (cloud.value === 'full') {
+                displayStatus = 'COMPLETED';
+            } else if (cloud.value === 'partial') {
+                displayStatus = 'PARTIAL';
+            } else if (cloud.value === 'not_supported_yet') {
+                displayStatus = 'NOT YET SUPPORTED';
+            }
+            
+            badge.textContent = `${cloud.label}: ${displayStatus}`;
             coverageBadgesEl.appendChild(badge);
         });
     }

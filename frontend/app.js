@@ -17,6 +17,10 @@ let currentScenario = null;
 let currentIntentGraph = null;
 let uploadedFiles = [];
 
+// Time unit selector state
+let currentTimeUnit = 'monthly';
+let customValue = null; // For custom hours or users
+
 // State for insight focus
 let focusedInsightId = null;
 
@@ -38,8 +42,8 @@ const SAMPLE_ESTIMATE = {
         region: "ap-south-1",
         pricing_timestamp: "2024-01-01T12:00:00",
         coverage: {
-            aws: "partial",
-            azure: "full",
+            aws: "full",
+            azure: "not_supported_yet",
             gcp: "not_supported_yet"
         },
         line_items: [
@@ -132,6 +136,60 @@ const SAMPLE_INSIGHTS = [
         disclaimer: "Unpriced resources are excluded from the total estimate."
     }
 ];
+
+/**
+ * Convert monthly cost to selected time unit
+ */
+function convertCost(monthlyCost, unit, customVal = null) {
+    if (!monthlyCost || monthlyCost === 0) return 0;
+    
+    switch (unit) {
+        case 'monthly':
+            return monthlyCost;
+        case 'hourly':
+            return monthlyCost / 730; // 730 hours per month
+        case 'daily':
+            return monthlyCost / 30; // 30 days per month
+        case 'hours':
+            if (customVal && customVal > 0) {
+                return (monthlyCost / 730) * customVal; // Cost for custom hours
+            }
+            return monthlyCost / 730; // Default to hourly if no custom value
+        case 'users':
+            if (customVal && customVal > 0) {
+                return monthlyCost / customVal; // Cost per user
+            }
+            return monthlyCost; // Default to monthly if no custom value
+        default:
+            return monthlyCost;
+    }
+}
+
+/**
+ * Get unit label for display
+ */
+function getUnitLabel(unit, customVal = null) {
+    switch (unit) {
+        case 'monthly':
+            return '/month';
+        case 'hourly':
+            return '/hour';
+        case 'daily':
+            return '/day';
+        case 'hours':
+            if (customVal && customVal > 0) {
+                return `/${customVal} hours`;
+            }
+            return '/hour';
+        case 'users':
+            if (customVal && customVal > 0) {
+                return `/user (${customVal} users)`;
+            }
+            return '/user';
+        default:
+            return '/month';
+    }
+}
 
 /**
  * Format currency value
@@ -298,7 +356,7 @@ function renderCostDrivers(lineItems, totalCost, scenarioDeltas = null) {
                 <div>
                     <div class="cost-driver-name">${getCategoryIcon(categoryData.category)} ${getCategoryName(categoryData.category)}</div>
                     <div class="cost-driver-amount">
-                        ${formatCurrency(categoryData.totalCost)}
+                        ${formatCurrency(convertCost(categoryData.totalCost, currentTimeUnit, customValue))}
                         ${categoryDelta ? renderDeltaIndicator(categoryDelta.deltaUsd, categoryDelta.deltaPercent, 'small') : ''}
                     </div>
                 </div>
@@ -634,6 +692,7 @@ function highlightCategoryInTable(category) {
  */
 function renderSummary(estimate, scenario = null) {
     const totalCostEl = document.getElementById('total-cost');
+    const costUnitLabelEl = document.getElementById('cost-unit-label');
     const regionEl = document.getElementById('region');
     const coverageBadgesEl = document.getElementById('coverage-badges');
     
@@ -642,17 +701,25 @@ function renderSummary(estimate, scenario = null) {
         const existingDelta = totalCostEl.querySelector('.scenario-delta-badge');
         if (existingDelta) existingDelta.remove();
         
-        totalCostEl.textContent = formatCurrency(estimate.total_monthly_cost_usd);
+        // Convert cost to selected unit
+        const convertedCost = convertCost(estimate.total_monthly_cost_usd, currentTimeUnit, customValue);
+        totalCostEl.textContent = formatCurrency(convertedCost);
         
-        // Show delta if scenario is active
+        // Update unit label
+        if (costUnitLabelEl) {
+            costUnitLabelEl.textContent = getUnitLabel(currentTimeUnit, customValue);
+        }
+        
+        // Show delta if scenario is active (delta is always in monthly terms)
         if (scenario && baseEstimate) {
-            const delta = estimate.total_monthly_cost_usd - baseEstimate.total_monthly_cost_usd;
+            const monthlyDelta = estimate.total_monthly_cost_usd - baseEstimate.total_monthly_cost_usd;
+            const convertedDelta = convertCost(monthlyDelta, currentTimeUnit, customValue);
             const deltaPercent = baseEstimate.total_monthly_cost_usd > 0 
-                ? (delta / baseEstimate.total_monthly_cost_usd) * 100 
+                ? (monthlyDelta / baseEstimate.total_monthly_cost_usd) * 100 
                 : null;
             const deltaEl = document.createElement('span');
             deltaEl.className = 'scenario-delta-badge';
-            deltaEl.innerHTML = renderDeltaIndicator(delta, deltaPercent);
+            deltaEl.innerHTML = renderDeltaIndicator(convertedDelta, deltaPercent);
             totalCostEl.appendChild(deltaEl);
         }
     }
@@ -675,7 +742,18 @@ function renderSummary(estimate, scenario = null) {
             const status = coverage[cloud.name] || 'unknown';
             const badge = document.createElement('span');
             badge.className = `coverage-badge ${status.replace('_', '-')}`;
-            badge.textContent = `${cloud.label}: ${status.replace('_', ' ')}`;
+            
+            // Format status text for display
+            let displayStatus = status.replace('_', ' ');
+            if (status === 'full') {
+                displayStatus = 'COMPLETED';
+            } else if (status === 'partial') {
+                displayStatus = 'PARTIAL';
+            } else if (status === 'not_supported_yet') {
+                displayStatus = 'NOT YET SUPPORTED';
+            }
+            
+            badge.textContent = `${cloud.label}: ${displayStatus}`;
             coverageBadgesEl.appendChild(badge);
         });
     }
@@ -761,6 +839,10 @@ function renderScenarioComparison(estimateData) {
     
     const baseCostEl = document.getElementById('base-cost');
     const scenarioCostEl = document.getElementById('scenario-cost');
+    
+    // Convert costs to selected unit
+    const convertedBaseCost = convertCost(baseEst.total_monthly_cost_usd, currentTimeUnit, customValue);
+    const convertedScenarioCost = convertCost(scenarioEst.total_monthly_cost_usd, currentTimeUnit, customValue);
     const baseRegionEl = document.getElementById('base-region');
     const scenarioRegionEl = document.getElementById('scenario-region');
     const deltaEl = document.getElementById('scenario-delta');
@@ -769,11 +851,13 @@ function renderScenarioComparison(estimateData) {
     const scenarioEst = scenarioResult.scenario_estimate;
     
     if (baseCostEl) {
-        baseCostEl.textContent = formatCurrency(baseEst.total_monthly_cost_usd);
+        const convertedBaseCost = convertCost(baseEst.total_monthly_cost_usd, currentTimeUnit, customValue);
+        baseCostEl.textContent = formatCurrency(convertedBaseCost);
     }
     
     if (scenarioCostEl) {
-        scenarioCostEl.textContent = formatCurrency(scenarioEst.total_monthly_cost_usd);
+        const convertedScenarioCost = convertCost(scenarioEst.total_monthly_cost_usd, currentTimeUnit, customValue);
+        scenarioCostEl.textContent = formatCurrency(convertedScenarioCost);
     }
     
     if (baseRegionEl) {
@@ -894,7 +978,8 @@ function renderCostTable(lineItems, deltas = null) {
         if (item.monthly_cost_usd === 0) {
             costCell.classList.add('zero');
         }
-        costCell.textContent = formatCurrency(item.monthly_cost_usd || 0);
+        const convertedCost = convertCost(item.monthly_cost_usd || 0, currentTimeUnit, customValue);
+        costCell.textContent = formatCurrency(convertedCost);
         row.appendChild(costCell);
         
         // Confidence
@@ -914,7 +999,8 @@ function renderCostTable(lineItems, deltas = null) {
                 const costCell = row.querySelector('.cost-value');
                 if (costCell) {
                     const baseText = costCell.textContent;
-                    const deltaIndicator = renderDeltaIndicator(delta.delta_usd, delta.delta_percent, 'small');
+                    const convertedDelta = convertCost(delta.delta_usd || 0, currentTimeUnit, customValue);
+                    const deltaIndicator = renderDeltaIndicator(convertedDelta, delta.delta_percent, 'small');
                     if (deltaIndicator) {
                         const wrapper = document.createElement('div');
                         wrapper.style.display = 'flex';
@@ -922,7 +1008,7 @@ function renderCostTable(lineItems, deltas = null) {
                         wrapper.style.alignItems = 'flex-end';
                         wrapper.style.gap = '2px';
                         wrapper.innerHTML = `
-                            <div>${formatCurrency(item.monthly_cost_usd || 0)}</div>
+                            <div>${formatCurrency(convertCost(item.monthly_cost_usd || 0, currentTimeUnit, customValue))}</div>
                             <div>${deltaIndicator}</div>
                         `;
                         costCell.innerHTML = '';
@@ -1176,40 +1262,53 @@ function initRegionDropdown() {
     const regionPill = document.getElementById('region-pill');
     const regionDropdown = document.getElementById('region-dropdown');
     const regionOptions = document.getElementById('region-options');
-    const compareBtn = document.getElementById('compare-region-btn');
-    const selectedRegionName = document.getElementById('selected-region-name');
     
     if (!regionPill || !regionDropdown || !regionOptions) return;
     
-    let selectedRegion = null;
-    
-    // Populate region options (exclude current region)
+    // Populate region options (include all regions, highlight current)
     const currentRegionEl = document.getElementById('region');
     const currentRegion = currentRegionEl ? currentRegionEl.textContent.trim() : null;
     
+    // Clear existing options
+    regionOptions.innerHTML = '';
+    
     COMMON_REGIONS.forEach(region => {
-        // Skip current region
-        if (currentRegion && region.code === currentRegion) return;
-        
         const option = document.createElement('div');
         option.className = 'region-option';
         option.dataset.region = region.code;
+        
+        // Mark current region as selected
+        if (currentRegion && region.code === currentRegion) {
+            option.classList.add('selected');
+        }
+        
         option.innerHTML = `
             <div>${region.name}</div>
             <div style="font-size: 0.75rem; opacity: 0.7;">${region.code}</div>
         `;
         
-        option.addEventListener('click', () => {
-            // Remove selected from all
+        option.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            
+            const clickedRegion = region.code;
+            
+            // Don't re-estimate if clicking the same region
+            if (currentRegion === clickedRegion) {
+                regionPill.classList.remove('active');
+                regionDropdown.style.display = 'none';
+                return;
+            }
+            
+            // Update selected state
             regionOptions.querySelectorAll('.region-option').forEach(opt => opt.classList.remove('selected'));
             option.classList.add('selected');
-            selectedRegion = region.code;
             
-            // Show compare button
-            if (compareBtn && selectedRegionName) {
-                compareBtn.style.display = 'block';
-                selectedRegionName.textContent = region.name;
-            }
+            // Close dropdown
+            regionPill.classList.remove('active');
+            regionDropdown.style.display = 'none';
+            
+            // Re-estimate with new region
+            await reEstimateWithRegion(clickedRegion);
         });
         
         regionOptions.appendChild(option);
@@ -1236,16 +1335,90 @@ function initRegionDropdown() {
             regionDropdown.style.display = 'none';
         }
     });
+}
+
+/**
+ * Re-estimate costs with a new region
+ */
+async function reEstimateWithRegion(newRegion) {
+    if (!currentIntentGraph) {
+        console.error('No intent graph available for re-estimation');
+        return;
+    }
     
-    // Compare button handler
-    if (compareBtn) {
-        compareBtn.addEventListener('click', async () => {
-            if (selectedRegion) {
-                await applyScenario({ region_override: selectedRegion });
-                regionPill.classList.remove('active');
-                regionDropdown.style.display = 'none';
+    try {
+        // Show loading state
+        const totalCostEl = document.getElementById('total-cost');
+        if (totalCostEl) {
+            totalCostEl.textContent = 'Calculating...';
+        }
+        
+        // Call estimate API with region override
+        // Use the same endpoint pattern as the original estimate
+        const endpoint = currentIntentGraph 
+            ? '/api/terraform/estimate'
+            : '/api/terraform/estimate/local';
+        
+        const requestBody = currentIntentGraph
+            ? {
+                intent_graph: currentIntentGraph,
+                region_override: newRegion,
+                scenario: null
             }
+            : {
+                terraform_files: uploadedFiles,
+                region_override: newRegion
+            };
+        
+        const response = await fetch(apiUrl(endpoint), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody)
         });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+            throw new Error(errorData.detail || `Estimate failed: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.status === 'ok' && data.estimate) {
+            // Update base estimate
+            baseEstimate = data.estimate;
+            currentScenario = null; // Clear any scenario when changing region
+            
+            // Store updated intent graph if provided
+            if (data.intent_graph) {
+                currentIntentGraph = data.intent_graph;
+            }
+            
+            // Render the new estimate
+            const estimateData = {
+                estimate: data.estimate,
+                scenario_result: null,
+                insights: data.insights || null
+            };
+            
+            renderEstimate(estimateData, false);
+        } else {
+            throw new Error('Invalid response from estimate API');
+        }
+    } catch (error) {
+        console.error('Failed to re-estimate with new region:', error);
+        alert('Failed to update estimate for new region. Please try again.');
+        
+        // Restore previous estimate display
+        if (baseEstimate) {
+            const estimateData = {
+                estimate: baseEstimate,
+                scenario_result: null,
+                insights: null
+            };
+            renderEstimate(estimateData, false);
+        }
     }
 }
 
@@ -2475,7 +2648,93 @@ function initTerraformInput() {
         }
     }
     
-    // Estimate from text
+    // Real-time estimation as user types (debounced)
+    if (textarea) {
+        let debounceTimer = null;
+        const DEBOUNCE_DELAY = 1500; // Wait 1.5s after user stops typing
+        
+        // Show results section immediately
+        const resultsSection = document.getElementById('results-section');
+        if (resultsSection) {
+            resultsSection.style.display = 'block';
+        }
+        
+        textarea.addEventListener('input', async (e) => {
+            const text = e.target.value.trim();
+            
+            // Clear existing timer
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+            }
+            
+            // Show loading state if we have some content
+            if (text.length > 10) {
+                const totalCostEl = document.getElementById('total-cost');
+                if (totalCostEl) {
+                    totalCostEl.textContent = 'Calculating...';
+                    totalCostEl.style.opacity = '0.6';
+                }
+            }
+            
+            // If empty or too short, clear estimate
+            if (!text || text.length < 10) {
+                // Clear estimate display
+                const totalCostEl = document.getElementById('total-cost');
+                if (totalCostEl) {
+                    totalCostEl.textContent = '$0.00';
+                    totalCostEl.style.opacity = '1';
+                }
+                
+                // Clear results
+                baseEstimate = null;
+                currentIntentGraph = null;
+                return;
+            }
+            
+            // Simple syntax check: look for at least one resource block
+            const hasResourceBlock = /resource\s+["'][^"']+["']\s+["'][^"']+["']\s*\{/.test(text);
+            if (!hasResourceBlock) {
+                // Not valid Terraform yet, wait for more input
+                return;
+            }
+            
+            // Set new timer
+            debounceTimer = setTimeout(async () => {
+                try {
+                    await estimateFromLocal(text, null, true); // true = silent mode (no alerts)
+                } catch (error) {
+                    // Silently handle errors in real-time mode
+                    console.debug('Real-time estimate error:', error);
+                    const totalCostEl = document.getElementById('total-cost');
+                    if (totalCostEl) {
+                        totalCostEl.textContent = '$0.00';
+                        totalCostEl.style.opacity = '0.5';
+                    }
+                }
+            }, DEBOUNCE_DELAY);
+        });
+        
+        // Also estimate on paste
+        textarea.addEventListener('paste', () => {
+            // The input event will fire after paste, so we don't need to do anything here
+            // But we can trigger a faster update for paste
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+            }
+            const text = textarea.value.trim();
+            if (text.length > 10) {
+                debounceTimer = setTimeout(async () => {
+                    try {
+                        await estimateFromLocal(text, null, true);
+                    } catch (error) {
+                        console.debug('Real-time estimate error:', error);
+                    }
+                }, 800); // Faster for paste (800ms)
+            }
+        });
+    }
+    
+    // Keep estimate button as fallback (optional)
     if (estimateFromTextBtn) {
         estimateFromTextBtn.addEventListener('click', async () => {
             const text = textarea?.value.trim();
@@ -2504,15 +2763,17 @@ function initTerraformInput() {
 /**
  * Estimate costs from local Terraform input
  */
-async function estimateFromLocal(terraformText = null, files = null) {
+async function estimateFromLocal(terraformText = null, files = null, silent = false) {
     try {
-        // Show loading state
-        const estimateBtn = terraformText 
-            ? document.getElementById('estimate-from-text-btn')
-            : document.getElementById('estimate-from-files-btn');
-        if (estimateBtn) {
-            estimateBtn.disabled = true;
-            estimateBtn.textContent = 'Calculating...';
+        // Show loading state (only if not in silent mode)
+        if (!silent) {
+            const estimateBtn = terraformText 
+                ? document.getElementById('estimate-from-text-btn')
+                : document.getElementById('estimate-from-files-btn');
+            if (estimateBtn) {
+                estimateBtn.disabled = true;
+                estimateBtn.textContent = 'Calculating...';
+            }
         }
         
         let response;
@@ -2571,28 +2832,50 @@ async function estimateFromLocal(terraformText = null, files = null) {
             
             renderEstimate(estimateData);
             
-            // Hide input section, show results (support both landing.html and index.html)
-            const inputSection = document.getElementById('terraform-input-section') || document.querySelector('.try-it');
+            // Show results section (keep input visible for real-time updates)
             const resultsSection = document.getElementById('results-section');
-            if (inputSection) inputSection.style.display = 'none';
-            if (resultsSection) resultsSection.style.display = 'block';
-            
-            // Scroll to results
             if (resultsSection) {
-                resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                resultsSection.style.display = 'block';
+            }
+            
+            // Restore opacity
+            const totalCostEl = document.getElementById('total-cost');
+            if (totalCostEl) {
+                totalCostEl.style.opacity = '1';
+            }
+            
+            // Only hide input section and scroll if not in silent mode
+            if (!silent) {
+                const inputSection = document.getElementById('terraform-input-section') || document.querySelector('.try-it');
+                if (inputSection) inputSection.style.display = 'none';
+                
+                // Scroll to results
+                if (resultsSection) {
+                    resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
             }
         }
     } catch (error) {
         console.error('Failed to estimate costs:', error);
-        alert(`Failed to estimate costs: ${error.message}`);
+        if (!silent) {
+            alert(`Failed to estimate costs: ${error.message}`);
+        }
+        
+        // Restore opacity on error
+        const totalCostEl = document.getElementById('total-cost');
+        if (totalCostEl) {
+            totalCostEl.style.opacity = '1';
+        }
     } finally {
-        // Reset button state
-        const estimateBtn = terraformText 
-            ? document.getElementById('estimate-from-text-btn')
-            : document.getElementById('estimate-from-files-btn');
-        if (estimateBtn) {
-            estimateBtn.disabled = false;
-            estimateBtn.textContent = 'Estimate Costs';
+        // Reset button state (only if not in silent mode)
+        if (!silent) {
+            const estimateBtn = terraformText 
+                ? document.getElementById('estimate-from-text-btn')
+                : document.getElementById('estimate-from-files-btn');
+            if (estimateBtn) {
+                estimateBtn.disabled = false;
+                estimateBtn.textContent = 'Estimate Costs';
+            }
         }
     }
 }
@@ -2702,6 +2985,217 @@ function addReadOnlyBanner() {
 }
 
 /**
+ * Initialize traffic assumptions input with real-time updates
+ */
+function initTrafficInput() {
+    const usersInput = document.getElementById('users-input');
+    if (!usersInput) return;
+    
+    let debounceTimer = null;
+    const DEBOUNCE_DELAY = 800; // Wait 800ms after user stops typing
+    
+    usersInput.addEventListener('input', (e) => {
+        // Clear existing timer
+        if (debounceTimer) {
+            clearTimeout(debounceTimer);
+        }
+        
+        // Set new timer
+        debounceTimer = setTimeout(async () => {
+            const usersValue = e.target.value.trim();
+            
+            // Only update if we have an estimate and a valid number
+            if (!currentIntentGraph || !baseEstimate) {
+                return;
+            }
+            
+            // If empty, reset to base estimate
+            if (!usersValue || usersValue === '') {
+                if (currentScenario && currentScenario.users !== undefined) {
+                    // Reset scenario
+                    resetScenario();
+                }
+                return;
+            }
+            
+            const users = parseInt(usersValue, 10);
+            if (isNaN(users) || users < 0) {
+                return; // Invalid input, don't update
+            }
+            
+            // Update estimate with new users value
+            await updateEstimateWithUsers(users);
+        }, DEBOUNCE_DELAY);
+    });
+    
+    // Also update on blur (when user leaves the field)
+    usersInput.addEventListener('blur', async (e) => {
+        if (debounceTimer) {
+            clearTimeout(debounceTimer);
+        }
+        
+        const usersValue = e.target.value.trim();
+        if (!currentIntentGraph || !baseEstimate) {
+            return;
+        }
+        
+        if (!usersValue || usersValue === '') {
+            if (currentScenario && currentScenario.users !== undefined) {
+                resetScenario();
+            }
+            return;
+        }
+        
+        const users = parseInt(usersValue, 10);
+        if (isNaN(users) || users < 0) {
+            return;
+        }
+        
+        await updateEstimateWithUsers(users);
+    });
+}
+
+/**
+ * Initialize time unit selector
+ */
+function initTimeUnitSelector() {
+    const timeUnitSelect = document.getElementById('time-unit');
+    const customValueInput = document.getElementById('custom-value-input');
+    
+    if (!timeUnitSelect) return;
+    
+    // Show/hide custom value input based on selection
+    function updateCustomInputVisibility() {
+        const selectedUnit = timeUnitSelect.value;
+        if (customValueInput) {
+            if (selectedUnit === 'hours' || selectedUnit === 'users') {
+                customValueInput.style.display = 'inline-block';
+                customValueInput.placeholder = selectedUnit === 'hours' ? 'Hours' : 'Users';
+                if (!customValueInput.value) {
+                    customValueInput.value = selectedUnit === 'hours' ? '730' : '100';
+                    customValue = parseInt(customValueInput.value, 10);
+                }
+            } else {
+                customValueInput.style.display = 'none';
+                customValue = null;
+            }
+        }
+    }
+    
+    // Handle unit change
+    timeUnitSelect.addEventListener('change', (e) => {
+        currentTimeUnit = e.target.value;
+        updateCustomInputVisibility();
+        
+        // Update estimate display if we have an estimate
+        if (baseEstimate) {
+            renderSummary(baseEstimate, currentScenario);
+            // Re-render cost drivers and table
+            if (baseEstimate.line_items) {
+                renderCostDrivers(baseEstimate.line_items, baseEstimate.total_monthly_cost_usd);
+                renderCostTable(baseEstimate.line_items);
+            }
+        }
+    });
+    
+    // Handle custom value change (debounced)
+    if (customValueInput) {
+        let debounceTimer = null;
+        customValueInput.addEventListener('input', (e) => {
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+            }
+            
+            debounceTimer = setTimeout(() => {
+                const value = parseInt(e.target.value, 10);
+                if (!isNaN(value) && value > 0) {
+                    customValue = value;
+                    
+                    // Update estimate display if we have an estimate
+                    if (baseEstimate) {
+                        renderSummary(baseEstimate, currentScenario);
+                        // Re-render cost drivers and table
+                        if (baseEstimate.line_items) {
+                            renderCostDrivers(baseEstimate.line_items, baseEstimate.total_monthly_cost_usd);
+                            renderCostTable(baseEstimate.line_items);
+                        }
+                    }
+                }
+            }, 300);
+        });
+    }
+    
+    // Initialize visibility
+    updateCustomInputVisibility();
+}
+
+/**
+ * Update estimate with new users value
+ */
+async function updateEstimateWithUsers(users) {
+    if (!currentIntentGraph || !baseEstimate) {
+        return;
+    }
+    
+    try {
+        // Show subtle loading indicator
+        const totalCostEl = document.getElementById('total-cost');
+        const originalText = totalCostEl ? totalCostEl.textContent : '';
+        if (totalCostEl) {
+            totalCostEl.style.opacity = '0.6';
+        }
+        
+        // Call scenario API with users parameter
+        const endpoint = apiUrl('/api/terraform/estimate/scenario');
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                intent_graph: currentIntentGraph,
+                scenario: {
+                    users: users
+                }
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Scenario API error: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.status === 'ok' && data.scenario_result) {
+            // Update current scenario
+            currentScenario = { users: users };
+            
+            // Create estimate data structure with scenario result
+            const estimateData = {
+                estimate: data.scenario_result.scenario_estimate,
+                scenario_result: data.scenario_result,
+                insights: null
+            };
+            
+            renderEstimate(estimateData, true);
+        }
+        
+        // Restore opacity
+        if (totalCostEl) {
+            totalCostEl.style.opacity = '1';
+        }
+    } catch (error) {
+        console.error('Failed to update estimate with users:', error);
+        // Silently fail - don't show alert for real-time updates
+        // Restore opacity
+        const totalCostEl = document.getElementById('total-cost');
+        if (totalCostEl) {
+            totalCostEl.style.opacity = '1';
+        }
+    }
+}
+
+/**
  * Initialize app
  */
 function init() {
@@ -2718,6 +3212,8 @@ function init() {
     initBreakdownToggle();
     initRegionDropdown();
     initResetButton();
+    initTrafficInput();
+    initTimeUnitSelector();
     initExplainer();
     initExportControls();
     initShareControls();
