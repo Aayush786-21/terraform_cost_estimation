@@ -34,14 +34,54 @@ class CostEstimator:
         """
         Initialize cost estimator with pricing clients.
         
+        This constructor is intentionally defensive:
+        - If a cloud pricing client cannot be initialized (e.g. missing SDK,
+          no network, or credentials issues), we log the problem and fall back
+          to static baseline prices for common instance types instead of
+          failing the entire estimate.
+        - This keeps the product usable in local/demo environments while still
+          using official pricing APIs when available.
+        
         Args:
             aws_client: AWS pricing client (creates new if None)
             azure_client: Azure pricing client (creates new if None)
             gcp_client: GCP pricing client (creates new if None)
         """
-        self.aws_client = aws_client or AWSPricingClient()
-        self.azure_client = azure_client or AzurePricingClient()
-        self.gcp_client = gcp_client or GCPPricingClient()
+        # AWS client (may fallback to static pricing)
+        if aws_client is not None:
+            self.aws_client = aws_client
+        else:
+            try:
+                self.aws_client = AWSPricingClient()
+            except AWSPricingError as error:
+                logger.warning(
+                    "AWS pricing client unavailable, falling back to static pricing: %s",
+                    error,
+                )
+                self.aws_client = None
+
+        # Azure client (may fallback to static pricing)
+        if azure_client is not None:
+            self.azure_client = azure_client
+        else:
+            try:
+                self.azure_client = AzurePricingClient()
+            except AzurePricingError as error:
+                logger.warning(
+                    "Azure pricing client unavailable, falling back to static pricing: %s",
+                    error,
+                )
+                self.azure_client = None
+
+        # GCP client (currently a placeholder; pricing not fully implemented)
+        try:
+            self.gcp_client = gcp_client or GCPPricingClient()
+        except GCPPricingError as error:
+            logger.warning(
+                "GCP pricing client unavailable (pricing not yet implemented): %s",
+                error,
+            )
+            self.gcp_client = None
     
     def _resolve_region(
         self,
@@ -183,24 +223,63 @@ class CostEstimator:
         if not instance_type:
             return None
         
+        # Baseline fallback prices for common instance types (approximate).
+        # These are used when real pricing APIs are unavailable so that local
+        # demos still show non-zero costs.
+        fallback_ec2_prices = {
+            "t3.nano": 0.005,
+            "t3.micro": 0.01,
+            "t3.small": 0.02,
+            "t3.medium": 0.04,
+            "t3.large": 0.08,
+        }
+        fallback_rds_prices = {
+            "db.t3.micro": 0.02,
+            "db.t3.small": 0.04,
+            "db.t3.medium": 0.08,
+        }
+
         # Determine pricing unit and calculate
         hours_per_month = usage.get("hours_per_month", config.HOURS_PER_MONTH)
         assumptions.append(f"{hours_per_month} hours/month")
+
+        def _fallback_hourly_price() -> Optional[float]:
+            """Static demo prices used when official pricing is unavailable."""
+            if "EC2" in service or terraform_type == "aws_instance":
+                price = fallback_ec2_prices.get(instance_type)
+                if price is not None:
+                    assumptions.append(
+                        f"Using static demo price for EC2 instance_type={instance_type}"
+                    )
+                return price
+            if "RDS" in service or terraform_type.startswith("aws_db"):
+                price = fallback_rds_prices.get(instance_type)
+                if price is not None:
+                    assumptions.append(
+                        f"Using static demo price for RDS instance_class={instance_type}"
+                    )
+                return price
+            return None
         
         try:
-            hourly_price = None
+            hourly_price: Optional[float] = None
             
-            # Route to appropriate pricing method
-            if "EC2" in service or terraform_type == "aws_instance":
-                hourly_price = await self.aws_client.get_ec2_instance_price(
-                    instance_type=instance_type,
-                    region=resolved_region
-                )
-            elif "RDS" in service or terraform_type.startswith("aws_db"):
-                hourly_price = await self.aws_client.get_rds_instance_price(
-                    instance_type=instance_type,
-                    region=resolved_region
-                )
+            # Route to appropriate pricing method if client is available
+            if self.aws_client is not None:
+                if "EC2" in service or terraform_type == "aws_instance":
+                    hourly_price = await self.aws_client.get_ec2_instance_price(
+                        instance_type=instance_type,
+                        region=resolved_region
+                    )
+                elif "RDS" in service or terraform_type.startswith("aws_db"):
+                    hourly_price = await self.aws_client.get_rds_instance_price(
+                        instance_type=instance_type,
+                        region=resolved_region
+                    )
+
+            # Fallback to static pricing if API client is missing or returned no price
+            if hourly_price is None:
+                hourly_price = _fallback_hourly_price()
             
             if hourly_price is None:
                 return None
@@ -224,12 +303,55 @@ class CostEstimator:
         
         except AWSPricingError as error:
             logger.warning(f"Failed to price AWS resource {resource_name}: {error}")
-            return None
+            # Final fallback
+            hourly_price = _fallback_hourly_price()
+            if hourly_price is None:
+                return None
+            
+            monthly_cost = hourly_price * hours_per_month * resolved_count
+            assumptions.append(
+                f"Fallback static price used after AWS pricing error: ${hourly_price:.4f}/hour × {resolved_count} instances"
+            )
+            
+            return CostLineItem(
+                cloud="aws",
+                service=service,
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=monthly_cost,
+                pricing_unit="hour",
+                assumptions=assumptions,
+                priced=True,
+                confidence=confidence
+            )
         except Exception as error:
             # Catch any unexpected errors during pricing
-            logger.error(f"Unexpected error pricing AWS resource {resource_name} ({terraform_type}): {type(error).__name__}: {error}", 
-                        exc_info=True)
-            return None
+            logger.error(
+                f"Unexpected error pricing AWS resource {resource_name} ({terraform_type}): {type(error).__name__}: {error}", 
+                exc_info=True
+            )
+            hourly_price = _fallback_hourly_price()
+            if hourly_price is None:
+                return None
+
+            monthly_cost = hourly_price * hours_per_month * resolved_count
+            assumptions.append(
+                f"Fallback static price used after unexpected error: ${hourly_price:.4f}/hour × {resolved_count} instances"
+            )
+
+            return CostLineItem(
+                cloud="aws",
+                service=service,
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=monthly_cost,
+                pricing_unit="hour",
+                assumptions=assumptions,
+                priced=True,
+                confidence=confidence
+            )
     
     async def _price_azure_resource(
         self,
