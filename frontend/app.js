@@ -1,5 +1,5 @@
 /**
- * Terraform Cost Estimation UI
+ * TERRA-BUD UI
  * Redesigned with calm, insight-first approach
  */
 

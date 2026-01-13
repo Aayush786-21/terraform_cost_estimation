@@ -41,7 +41,7 @@ logger.info(
 
 
 app = FastAPI(
-    title="Terraform Cost Estimation",
+    title="TERRA-BUD",
     description="GitHub OAuth integration for Terraform cost estimation",
 )
 
@@ -101,10 +101,10 @@ async def root() -> HTMLResponse:
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Terraform Cost Estimation</title>
+            <title>TERRA-BUD</title>
         </head>
         <body>
-            <h1>Terraform Cost Estimation</h1>
+            <h1>TERRA-BUD</h1>
             <p>Frontend files not found. Please ensure frontend/landing.html or frontend/index.html exists.</p>
         </body>
         </html>

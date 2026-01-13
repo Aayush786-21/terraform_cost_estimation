@@ -36,6 +36,8 @@ env/
 # Environment variables
 .env
 .env.local
+.env.backup
+.env.*
 
 # OS
 .DS_Store

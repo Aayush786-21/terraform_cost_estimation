@@ -1,6 +1,6 @@
-# Terraform Cost Estimation
+# TERRA-BUD
 
-A project for estimating costs of Terraform infrastructure deployments.
+TERRA-BUD is a tool for estimating costs of Terraform infrastructure deployments.
 
 ## Quick Start
 
