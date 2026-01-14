@@ -490,7 +490,8 @@ a.input-tab {
 }
 
 .what-this-is-not {
-    background: var(--color-beige);
+    /* Use transparent background so it matches dark theme card */
+    background: transparent;
     padding: var(--space-2xl);
     border-radius: var(--radius-lg);
     border-left: 4px solid var(--accent-secondary);
@@ -499,7 +500,8 @@ a.input-tab {
 .not-title {
     font-size: 1.5rem;
     font-weight: 600;
-    color: var(--text-primary);
+    /* Make the section title readable on dark background */
+    color: #e5e7eb; /* slate-200 */
     margin-bottom: var(--space-lg);
 }
 
@@ -512,11 +514,18 @@ a.input-tab {
     padding: var(--space-sm) 0;
     font-size: 1rem;
     line-height: 1.7;
-    color: var(--text-secondary);
+    /* Default text (descriptions) – similar to advisory paragraph */
+    color: #9ca3af; /* slate-400 */
+}
+
+.not-list li > span:not(.text-slate-500) {
+    /* Ensure span text uses the softer description color */
+    color: #9ca3af;
 }
 
 .not-list li strong {
-    color: var(--text-primary);
+    /* Left-hand labels (e.g. "A cloud provider bill") should be white */
+    color: #f9fafb; /* slate-50 */
     font-weight: 600;
 }
 

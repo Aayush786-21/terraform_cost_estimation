@@ -1308,11 +1308,6 @@ function initRegionDropdown() {
  * Re-estimate costs with a new region
  */
 async function reEstimateWithRegion(newRegion) {
-    if (!currentIntentGraph) {
-        console.error('No intent graph available for re-estimation');
-        return;
-    }
-    
     try {
         // Show loading state
         const totalCostEl = document.getElementById('total-cost');
@@ -1320,51 +1315,102 @@ async function reEstimateWithRegion(newRegion) {
             totalCostEl.textContent = 'Calculating...';
         }
         
-        // Use scenario endpoint with region_override
-        // This endpoint accepts intent_graph and doesn't require authentication
-        const requestBody = {
-            intent_graph: currentIntentGraph,
-            scenario: {
+        let data = null;
+
+        // Preferred path for anonymous/local mode: re-call local estimate
+        // using the original Terraform text and a JSON body so we can
+        // pass region_override end-to-end.
+        if (originalTerraformText) {
+            const body = {
+                terraform_files: [
+                    {
+                        path: 'main.tf',
+                        content: originalTerraformText
+                    }
+                ],
                 region_override: newRegion
+            };
+
+            const response = await fetch(apiUrl('/api/terraform/estimate/local'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-AI-API-Key': getAIAPIKey() || ''
+                },
+                body: JSON.stringify(body)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+                throw new Error(errorData.detail || `Estimate failed: ${response.statusText}`);
             }
-        };
-        
-        const response = await fetch(apiUrl('/api/terraform/estimate/scenario'), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-AI-API-Key': getAIAPIKey() || ''
-            },
-            body: JSON.stringify(requestBody)
-        });
-        
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ detail: response.statusText }));
-            throw new Error(errorData.detail || `Estimate failed: ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.status === 'ok' && data.scenario_result) {
-            // Use the scenario estimate (which has the new region)
-            baseEstimate = data.scenario_result.scenario_estimate;
-            currentScenario = null; // Clear any scenario when changing region
-            
-            // Store updated intent graph if provided
-            if (data.scenario_result.intent_graph) {
-                currentIntentGraph = data.scenario_result.intent_graph;
+
+            data = await response.json();
+
+            if (!(data && data.status === 'ok' && data.estimate)) {
+                throw new Error('Invalid response from local estimate API');
             }
-            
-            // Render the new estimate (use scenario estimate as base)
+
+            // Update base estimate and intent graph from local endpoint
+            baseEstimate = data.estimate;
+            currentIntentGraph = data.intent_graph || currentIntentGraph;
+
             const estimateData = {
-                estimate: data.scenario_result.scenario_estimate,
+                estimate: data.estimate,
                 scenario_result: null,
                 insights: data.insights || null
             };
-            
+
             renderEstimate(estimateData, false);
+        } else if (currentIntentGraph) {
+            // Fallback: use scenario endpoint with region_override when we
+            // only have an intent graph (e.g., some authenticated flows).
+            const requestBody = {
+                intent_graph: currentIntentGraph,
+                scenario: {
+                    region_override: newRegion
+                }
+            };
+            
+            const response = await fetch(apiUrl('/api/terraform/estimate/scenario'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-AI-API-Key': getAIAPIKey() || ''
+                },
+                body: JSON.stringify(requestBody)
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+                throw new Error(errorData.detail || `Estimate failed: ${response.statusText}`);
+            }
+            
+            data = await response.json();
+            
+            if (data.status === 'ok' && data.scenario_result) {
+                // Use the scenario estimate (which has the new region)
+                baseEstimate = data.scenario_result.scenario_estimate;
+                currentScenario = null; // Clear any scenario when changing region
+                
+                // Store updated intent graph if provided
+                if (data.scenario_result.intent_graph) {
+                    currentIntentGraph = data.scenario_result.intent_graph;
+                }
+                
+                // Render the new estimate (use scenario estimate as base)
+                const estimateData = {
+                    estimate: data.scenario_result.scenario_estimate,
+                    scenario_result: null,
+                    insights: data.insights || null
+                };
+                
+                renderEstimate(estimateData, false);
+            } else {
+                throw new Error('Invalid response from estimate API');
+            }
         } else {
-            throw new Error('Invalid response from estimate API');
+            throw new Error('No Terraform input or intent graph available for re-estimation');
         }
     } catch (error) {
         console.error('Failed to re-estimate with new region:', error);
