@@ -2866,8 +2866,14 @@ async function estimateFromLocal(terraformText = null, files = null, silent = fa
         }
         
         if (!response.ok) {
-            const error = await response.json().catch(() => ({ detail: 'Failed to estimate costs' }));
-            throw new Error(error.detail || 'Failed to estimate costs');
+            const errorBody = await response.json().catch(() => ({ detail: 'Failed to estimate costs' }));
+            const message = errorBody.detail || errorBody.message || 'Failed to estimate costs';
+            const error = new Error(message);
+            // Tag rate limit errors so we can show a friendlier message
+            if (response.status === 429 || errorBody.error === 'rate_limited') {
+                error.name = 'RateLimitError';
+            }
+            throw error;
         }
         
         const data = await response.json();
@@ -2943,7 +2949,11 @@ async function estimateFromLocal(terraformText = null, files = null, silent = fa
         }
         
         if (!silent) {
-        alert(`Failed to estimate costs: ${error.message}`);
+            if (error.name === 'RateLimitError') {
+                alert('I think you have a habit of estimating cost – review our pricing before you proceed.');
+            } else {
+                alert(`Failed to estimate costs: ${error.message}`);
+            }
         }
         
         // Restore opacity on error

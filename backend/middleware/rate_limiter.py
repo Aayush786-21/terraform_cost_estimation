@@ -15,10 +15,11 @@ from starlette.types import ASGIApp
 logger = logging.getLogger(__name__)
 
 
-# Rate limit configuration: endpoint -> requests per minute
+# Rate limit configuration: endpoint -> requests per window (per client/IP)
 RATE_LIMITS: Dict[str, int] = {
-    "/api/terraform/estimate": 10,
-    "/api/terraform/estimate/scenario": 10,
+    "/api/terraform/estimate": 50,
+    "/api/terraform/estimate/scenario": 50,
+    "/api/terraform/estimate/local": 50,
     "/api/terraform/insights": 5,
 }
 
