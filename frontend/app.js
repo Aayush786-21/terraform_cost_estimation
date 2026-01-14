@@ -1218,8 +1218,8 @@ function initBreakdownToggle() {
     // Breakdown is always visible now - no toggle needed
     const breakdownContent = document.getElementById('breakdown-content');
     if (breakdownContent) {
-        breakdownContent.style.display = 'block';
-    }
+            breakdownContent.style.display = 'block';
+        }
 }
 
 /**
@@ -2385,6 +2385,32 @@ function hideShareModal() {
 }
 
 /**
+ * Show rate limit modal
+ */
+function showRateLimitModal() {
+    const modal = document.getElementById('rate-limit-modal');
+    if (!modal) return;
+    
+    modal.style.display = 'flex';
+    
+    // Prevent body scroll
+    document.body.style.overflow = 'hidden';
+}
+
+/**
+ * Hide rate limit modal
+ */
+function hideRateLimitModal() {
+    const modal = document.getElementById('rate-limit-modal');
+    if (!modal) return;
+    
+    modal.style.display = 'none';
+    
+    // Restore body scroll
+    document.body.style.overflow = '';
+}
+
+/**
  * Initialize share controls
  */
 function initShareControls() {
@@ -2560,6 +2586,46 @@ function initExplainer() {
 }
 
 /**
+ * Initialize rate limit modal
+ */
+function initRateLimitModal() {
+    const modal = document.getElementById('rate-limit-modal');
+    const closeBtn = document.getElementById('rate-limit-close-btn');
+    const dismissBtn = document.getElementById('rate-limit-dismiss-btn');
+    const overlay = modal?.querySelector('.rate-limit-modal-overlay');
+    
+    if (!modal) return;
+    
+    // Close button handler
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            hideRateLimitModal();
+        });
+    }
+    
+    // Dismiss button handler
+    if (dismissBtn) {
+        dismissBtn.addEventListener('click', () => {
+            hideRateLimitModal();
+        });
+    }
+    
+    // Overlay click handler (close on outside click)
+    if (overlay) {
+        overlay.addEventListener('click', () => {
+            hideRateLimitModal();
+        });
+    }
+    
+    // ESC key handler
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.style.display !== 'none') {
+            hideRateLimitModal();
+        }
+    });
+}
+
+/**
  * Initialize Terraform input section
  */
 function initTerraformInput() {
@@ -2672,33 +2738,18 @@ function initTerraformInput() {
         }
     }
     
-    // Real-time estimation as user types (debounced)
+    // Real-time estimation DISABLED - user must click "Estimate Cost" button
+    // Debounce timer was causing issues where estimates would disappear after being displayed
     if (textarea) {
-        let debounceTimer = null;
-        const DEBOUNCE_DELAY = 1500; // Wait 1.5s after user stops typing
-        
-        // Show results section immediately
+        // Show results section immediately when user starts typing
         const resultsSection = document.getElementById('results-section');
         if (resultsSection) {
             resultsSection.style.display = 'block';
         }
         
+        // Only clear estimate if textarea becomes empty
         textarea.addEventListener('input', async (e) => {
             const text = e.target.value.trim();
-            
-            // Clear existing timer
-            if (debounceTimer) {
-                clearTimeout(debounceTimer);
-            }
-            
-            // Show loading state if we have some content
-            if (text.length > 10) {
-                const totalCostEl = document.getElementById('total-cost');
-                if (totalCostEl) {
-                    totalCostEl.textContent = 'Calculating...';
-                    totalCostEl.style.opacity = '0.6';
-                }
-            }
             
             // If empty or too short, clear estimate
             if (!text || text.length < 10) {
@@ -2712,48 +2763,18 @@ function initTerraformInput() {
                 // Clear results
                 baseEstimate = null;
                 currentIntentGraph = null;
-                return;
-            }
-            
-            // Simple syntax check: look for at least one resource block
-            const hasResourceBlock = /resource\s+["'][^"']+["']\s+["'][^"']+["']\s*\{/.test(text);
-            if (!hasResourceBlock) {
-                // Not valid Terraform yet, wait for more input
-                return;
-            }
-            
-            // Set new timer
-            debounceTimer = setTimeout(async () => {
-                try {
-                    await estimateFromLocal(text, null, true); // true = silent mode (no alerts)
-                } catch (error) {
-                    // Silently handle errors in real-time mode
-                    console.debug('Real-time estimate error:', error);
-                    const totalCostEl = document.getElementById('total-cost');
-                    if (totalCostEl) {
-                        totalCostEl.textContent = '$0.00';
-                        totalCostEl.style.opacity = '0.5';
-                    }
+                
+                // Clear the cost table
+                const tbody = document.getElementById('cost-table-body');
+                if (tbody) {
+                    tbody.innerHTML = '';
                 }
-            }, DEBOUNCE_DELAY);
-        });
-        
-        // Also estimate on paste
-        textarea.addEventListener('paste', () => {
-            // The input event will fire after paste, so we don't need to do anything here
-            // But we can trigger a faster update for paste
-            if (debounceTimer) {
-                clearTimeout(debounceTimer);
-            }
-            const text = textarea.value.trim();
-            if (text.length > 10) {
-                debounceTimer = setTimeout(async () => {
-                    try {
-                        await estimateFromLocal(text, null, true);
-                    } catch (error) {
-                        console.debug('Real-time estimate error:', error);
-                    }
-                }, 800); // Faster for paste (800ms)
+                
+                // Clear unpriced resources
+                const unpricedContainer = document.getElementById('unpriced-resources');
+                if (unpricedContainer) {
+                    unpricedContainer.innerHTML = '';
+                }
             }
         });
     }
@@ -2825,6 +2846,17 @@ async function estimateFromLocal(terraformText = null, files = null, silent = fa
         if (estimateBtn) {
             estimateBtn.disabled = true;
             estimateBtn.textContent = 'Calculating...';
+            }
+            
+            // Store previous cost value and show calculating state
+            const totalCostEl = document.getElementById('total-cost');
+            if (totalCostEl) {
+                // Store current value if it's not already "Calculating..."
+                if (totalCostEl.textContent !== 'Calculating...') {
+                    totalCostEl.dataset.previousValue = totalCostEl.textContent;
+                }
+                totalCostEl.textContent = 'Calculating...';
+                totalCostEl.style.opacity = '0.6';
             }
         }
         
@@ -2950,15 +2982,23 @@ async function estimateFromLocal(terraformText = null, files = null, silent = fa
         
         if (!silent) {
             if (error.name === 'RateLimitError') {
-                alert('I think you have a habit of estimating cost – review our pricing before you proceed.');
+                showRateLimitModal();
             } else {
-                alert(`Failed to estimate costs: ${error.message}`);
+        alert(`Failed to estimate costs: ${error.message}`);
             }
         }
         
-        // Restore opacity on error
+        // Reset cost display on error
         const totalCostEl = document.getElementById('total-cost');
         if (totalCostEl) {
+            // Reset to previous value or default to $0.00
+            const previousValue = totalCostEl.dataset.previousValue;
+            if (previousValue && previousValue !== 'Calculating...') {
+                totalCostEl.textContent = previousValue;
+            } else {
+                // If no previous value or it was calculating, show $0.00
+                totalCostEl.textContent = '$0.00';
+            }
             totalCostEl.style.opacity = '1';
         }
     } finally {
@@ -3250,6 +3290,7 @@ function init() {
     initExplainer();
     initExportControls();
     initShareControls();
+    initRateLimitModal();
     
     // Don't render sample data on load - wait for user input
     // Results section starts hidden (support both landing.html and index.html)

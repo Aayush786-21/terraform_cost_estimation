@@ -798,6 +798,28 @@ resource "aws_rds_instance" "db" {
         </div>
     </div>
 
+    <!-- RATE LIMIT MODAL -->
+    <div id="rate-limit-modal" class="rate-limit-modal" role="dialog" aria-labelledby="rate-limit-title" aria-modal="true" style="display: none;">
+        <div class="rate-limit-modal-overlay"></div>
+        <div class="rate-limit-modal-content">
+            <div class="rate-limit-header">
+                <h2 id="rate-limit-title" class="rate-limit-title">Usage Limit Reached</h2>
+                <button class="rate-limit-close" aria-label="Close rate limit modal" id="rate-limit-close-btn">
+                    <span aria-hidden="true">×</span>
+                </button>
+            </div>
+            <div class="rate-limit-body">
+                <div class="rate-limit-icon">⏱️</div>
+                <p class="rate-limit-message">
+                    I think you have a habit of estimating cost – review our pricing before you proceed or wait 4 hours for your usage limit to reset.
+                </p>
+            </div>
+            <div class="rate-limit-footer">
+                <button class="rate-limit-dismiss-btn" id="rate-limit-dismiss-btn">Got it</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Read-only banner for shared views -->
     <div id="read-only-banner" class="read-only-banner" style="display: none;">
         <div class="read-only-banner-content">

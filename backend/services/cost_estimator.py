@@ -150,8 +150,9 @@ class CostEstimator:
             value = count_model.get("value")
             if value is not None:
                 return int(value), assumptions
-            assumptions.append("Fixed count value is unknown")
-            return None, assumptions
+            # Default to 1 for fixed resources without explicit count (single resource)
+            assumptions.append("No count specified, assuming single resource (1)")
+            return 1, assumptions
         
         elif count_type == "autoscaling":
             if autoscaling_average_override is not None:
@@ -170,8 +171,9 @@ class CostEstimator:
             return None, assumptions
         
         else:
-            assumptions.append(f"Count type '{count_type}' cannot be resolved")
-            return None, assumptions
+            # Default to 1 for unknown count types (single resources without count attribute)
+            assumptions.append(f"Count type '{count_type}' not specified, assuming single resource (1)")
+            return 1, assumptions
     
     async def _price_aws_resource(
         self,
@@ -641,7 +643,666 @@ class CostEstimator:
                     assumptions=assumptions + [f"S3 pricing calculation had an error, using minimal estimate"],
                     priced=True,
                     confidence="low"
-                )
+            )
+        
+        # Special handling for NAT Gateway
+        if terraform_type == "aws_nat_gateway":
+            # NAT Gateway pricing: ~$0.045/hour + data processing (~$0.045/GB)
+            # Base cost: $0.045/hour * 730 hours/month = ~$32.85/month
+            # Plus data transfer costs (estimated based on usage)
+            data_transfer_gb = usage.get("data_transfer_gb", 0)
+            if data_transfer_gb == 0:
+                # Default assumption: minimal data transfer (1 GB/month for idle/light usage)
+                # This represents minimal outbound traffic through NAT Gateway
+                data_transfer_gb = 1.0
+                assumptions.append("Assuming minimal data transfer: 1 GB/month (idle/light usage scenario)")
+                assumptions.append("This represents outbound internet traffic from private subnets through NAT Gateway")
+                assumptions.append("Actual costs increase with data transfer volume - estimate for low-traffic scenario")
+            
+            hourly_cost = 0.045  # Base NAT Gateway hourly cost
+            monthly_base = hourly_cost * 730  # ~$32.85/month
+            data_processing_cost = data_transfer_gb * 0.045  # $0.045 per GB processed
+            
+            total_monthly_cost = (monthly_base + data_processing_cost) * resolved_count
+            
+            assumptions.append(f"NAT Gateway installation/base cost: ${hourly_cost:.4f}/hour × 730 hours = ${monthly_base:.2f}/month")
+            assumptions.append(f"Data processing charges: {data_transfer_gb} GB × $0.045/GB = ${data_processing_cost:.2f}")
+            assumptions.append("Note: Data transfer costs scale with actual usage - this assumes minimal traffic")
+            
+            return CostLineItem(
+                cloud="aws",
+                service="VPC",
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=total_monthly_cost,
+                pricing_unit="month",
+                assumptions=assumptions,
+                priced=True,
+                confidence="medium"  # Medium confidence - base cost is fixed, data transfer varies
+            )
+        
+        # Special handling for Network Load Balancer (NLB)
+        if terraform_type == "aws_lb" and service.lower() in ["nlb", "network load balancer"]:
+            # NLB pricing: ~$0.0225/hour + NLCU charges
+            # Base cost: $0.0225/hour * 730 hours/month = ~$16.43/month
+            # NLCU charges: ~$0.006 per NLCU-hour (varies by usage)
+            # Default assumption: 1 NLCU for minimal traffic
+            nlcu_count = usage.get("nlcu_count", 1.0)
+            if nlcu_count == 0:
+                nlcu_count = 1.0
+                assumptions.append("Assuming minimal NLCU usage: 1 NLCU (~1 Gbps, minimal connections)")
+            
+            hourly_cost = 0.0225  # Base NLB hourly cost
+            monthly_base = hourly_cost * 730  # ~$16.43/month
+            nlcu_hourly_cost = 0.006  # Per NLCU-hour
+            nlcu_monthly_cost = nlcu_count * nlcu_hourly_cost * 730  # NLCU charges
+            
+            total_monthly_cost = (monthly_base + nlcu_monthly_cost) * resolved_count
+            
+            assumptions.append(f"NLB base cost: ${hourly_cost:.4f}/hour × 730 hours = ${monthly_base:.2f}/month")
+            assumptions.append(f"NLCU charges: {nlcu_count} NLCU × ${nlcu_hourly_cost:.3f}/NLCU-hour × 730 hours = ${nlcu_monthly_cost:.2f}/month")
+            assumptions.append("NLCU factors: processed bytes, active connections")
+            assumptions.append("Note: Actual NLCU costs vary significantly with traffic - this assumes minimal usage")
+            
+            return CostLineItem(
+                cloud="aws",
+                service="ELB",
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=total_monthly_cost,
+                pricing_unit="month",
+                assumptions=assumptions,
+                priced=True,
+                confidence="low"  # Low confidence - NLCU costs vary greatly with traffic
+            )
+        
+        # Special handling for Application Load Balancer (ALB)
+        # aws_lb can be ALB, NLB, or CLB - we'll price as ALB by default
+        if terraform_type == "aws_lb":
+            # ALB pricing: ~$0.0225/hour + LCU charges
+            # Base cost: $0.0225/hour * 730 hours/month = ~$16.43/month
+            # LCU charges: ~$0.008 per LCU-hour (varies by usage)
+            # Default assumption: 1 LCU for minimal traffic (1 user, 1 Mbps, etc.)
+            lcu_count = usage.get("lcu_count", 1.0)
+            if lcu_count == 0:
+                lcu_count = 1.0
+                assumptions.append("Assuming minimal LCU usage: 1 LCU (1 user, ~1 Mbps, minimal requests)")
+            
+            hourly_cost = 0.0225  # Base ALB hourly cost
+            monthly_base = hourly_cost * 730  # ~$16.43/month
+            lcu_hourly_cost = 0.008  # Per LCU-hour
+            lcu_monthly_cost = lcu_count * lcu_hourly_cost * 730  # LCU charges
+            
+            total_monthly_cost = (monthly_base + lcu_monthly_cost) * resolved_count
+            
+            assumptions.append(f"ALB base cost: ${hourly_cost:.4f}/hour × 730 hours = ${monthly_base:.2f}/month")
+            assumptions.append(f"LCU charges: {lcu_count} LCU × ${lcu_hourly_cost:.3f}/LCU-hour × 730 hours = ${lcu_monthly_cost:.2f}/month")
+            assumptions.append("LCU factors: new connections, active connections, processed bytes, rule evaluations")
+            assumptions.append("Note: Actual LCU costs vary significantly with traffic - this assumes minimal usage")
+            
+            return CostLineItem(
+                cloud="aws",
+                service="ELB",
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=total_monthly_cost,
+                pricing_unit="month",
+                assumptions=assumptions,
+                priced=True,
+                confidence="low"  # Low confidence - LCU costs vary greatly with traffic
+            )
+        
+        # Special handling for Autoscaling Group
+        if terraform_type == "aws_autoscaling_group":
+            # ASG itself is free - it's just a management service
+            # The cost comes from the EC2 instances it manages
+            # If ASG is not triggered (scaling hasn't happened), cost is based on minimum instances
+            min_size = count_model.get("min", 1)
+            max_size = count_model.get("max", 1)
+            desired_capacity = count_model.get("desired", min_size)
+            
+            assumptions.append(f"ASG is a free management service - cost comes from managed EC2 instances")
+            assumptions.append(f"ASG configuration: min={min_size}, max={max_size}, desired={desired_capacity}")
+            
+            # Try to get instance type from size_hint (might be extracted from launch template)
+            instance_type_from_hint = size_hint.get("instance_type")
+            
+            if instance_type_from_hint:
+                # We have instance type - try to price it
+                try:
+                    if self.aws_client:
+                        hourly_price = await self.aws_client.get_ec2_instance_price(
+                            instance_type_from_hint,
+                            resolved_region
+                        )
+                        if hourly_price:
+                            # If ASG is not triggered, cost = min_size instances running 24/7
+                            instances_running = min_size  # When not triggered, min instances run
+                            monthly_cost = hourly_price * 730 * instances_running
+                            
+                            assumptions.append(f"If ASG is not triggered: {instances_running} instance(s) running at min capacity")
+                            assumptions.append(f"Instance type: {instance_type_from_hint} @ ${hourly_price:.4f}/hour")
+                            assumptions.append(f"Cost: {instances_running} × ${hourly_price:.4f}/hour × 730 hours = ${monthly_cost:.2f}/month")
+                            assumptions.append("Note: If ASG scales up, cost increases based on actual instance count")
+                            
+                            return CostLineItem(
+                                cloud="aws",
+                                service="EC2",
+                                resource_name=resource_name,
+                                terraform_type=terraform_type,
+                                region=resolved_region,
+                                monthly_cost_usd=monthly_cost,
+                                pricing_unit="month",
+                                assumptions=assumptions,
+                                priced=True,
+                                confidence="medium"  # Medium - depends on whether ASG triggers
+                            )
+                except Exception as error:
+                    logger.debug(f"Could not price ASG instances for {resource_name}: {error}")
+            
+            # Fallback: ASG service is free, but note about instance costs
+            assumptions.append("Note: ASG cost = cost of managed EC2 instances (priced separately via launch template)")
+            assumptions.append(f"If ASG is not triggered, cost is based on {min_size} minimum instance(s)")
+            assumptions.append("Actual cost depends on instance types in launch template/configuration")
+            
+            return CostLineItem(
+                cloud="aws",
+                service="EC2",
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=0.0,  # ASG service is free, instances priced separately
+                pricing_unit="month",
+                assumptions=assumptions,
+                priced=True,
+                confidence="low"  # Low - can't price without instance type
+            )
+        
+        # Special handling for VPC Endpoints (Interface)
+        if terraform_type == "aws_vpc_endpoint" and service.lower() in ["vpc", "endpoint"]:
+            # VPC Interface Endpoint pricing: ~$0.01/hour + data processing (~$0.01/GB)
+            # Base cost: $0.01/hour * 730 hours/month = ~$7.30/month
+            # Plus data processing costs
+            data_transfer_gb = usage.get("data_transfer_gb", 0)
+            if data_transfer_gb == 0:
+                data_transfer_gb = 1.0
+                assumptions.append("Assuming minimal data transfer: 1 GB/month (idle/light usage)")
+            
+            hourly_cost = 0.01  # Base VPC Endpoint hourly cost
+            monthly_base = hourly_cost * 730  # ~$7.30/month
+            data_processing_cost = data_transfer_gb * 0.01  # $0.01 per GB processed
+            
+            total_monthly_cost = (monthly_base + data_processing_cost) * resolved_count
+            
+            assumptions.append(f"VPC Interface Endpoint base cost: ${hourly_cost:.4f}/hour × 730 hours = ${monthly_base:.2f}/month")
+            assumptions.append(f"Data processing: {data_transfer_gb} GB × $0.01/GB = ${data_processing_cost:.2f}")
+            assumptions.append("Note: Gateway endpoints (S3, DynamoDB) are free - this is for Interface endpoints")
+            assumptions.append("Actual costs depend on data transfer volume - this assumes minimal traffic")
+            
+            return CostLineItem(
+                cloud="aws",
+                service="VPC",
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=total_monthly_cost,
+                pricing_unit="month",
+                assumptions=assumptions,
+                priced=True,
+                confidence="medium"
+            )
+        
+        # Special handling for EBS Volumes
+        if terraform_type == "aws_ebs_volume":
+            # EBS pricing: storage cost + IOPS (if provisioned)
+            # gp3: ~$0.08/GB/month (default)
+            # gp2: ~$0.10/GB/month
+            # io1/io2: ~$0.125/GB/month + IOPS charges
+            volume_type = size_hint.get("volume_type", "gp3")
+            size_gb = usage.get("storage_gb", 20.0)  # Default 20 GB
+            if size_gb == 0:
+                size_gb = 20.0
+                assumptions.append("Assuming default volume size: 20 GB (actual size may vary)")
+            
+            # Base storage pricing per GB/month
+            storage_prices = {
+                "gp3": 0.08,
+                "gp2": 0.10,
+                "io1": 0.125,
+                "io2": 0.125,
+                "st1": 0.045,
+                "sc1": 0.015
+            }
+            price_per_gb = storage_prices.get(volume_type.lower(), 0.08)
+            
+            monthly_storage_cost = size_gb * price_per_gb
+            
+            # Add IOPS charges for provisioned IOPS volumes
+            iops_cost = 0
+            if volume_type.lower() in ["io1", "io2"]:
+                provisioned_iops = usage.get("iops", 3000)  # Default 3000 IOPS
+                if provisioned_iops == 0:
+                    provisioned_iops = 3000
+                    assumptions.append("Assuming default provisioned IOPS: 3000 IOPS")
+                iops_cost = provisioned_iops * 0.065 / 1000  # $0.065 per 1000 IOPS/month
+                assumptions.append(f"Provisioned IOPS: {provisioned_iops} × $0.065/1000 IOPS = ${iops_cost:.2f}/month")
+            
+            total_monthly_cost = (monthly_storage_cost + iops_cost) * resolved_count
+            
+            assumptions.append(f"EBS Volume type: {volume_type.upper()}")
+            assumptions.append(f"Storage: {size_gb} GB × ${price_per_gb:.3f}/GB = ${monthly_storage_cost:.2f}/month")
+            assumptions.append("Note: Actual costs depend on volume size and IOPS configuration")
+            
+            return CostLineItem(
+                cloud="aws",
+                service="EBS",
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=total_monthly_cost,
+                pricing_unit="month",
+                assumptions=assumptions,
+                priced=True,
+                confidence="medium"
+            )
+        
+        # Special handling for EFS (Elastic File System)
+        if terraform_type == "aws_efs_file_system":
+            # EFS pricing: storage cost + throughput (if provisioned)
+            # Standard: ~$0.30/GB/month
+            # One Zone: ~$0.16/GB/month
+            # Infrequent Access: ~$0.025/GB/month (storage) + $0.01/GB (retrieval)
+            performance_mode = size_hint.get("performance_mode", "generalPurpose")
+            storage_gb = usage.get("storage_gb", 10.0)  # Default 10 GB
+            if storage_gb == 0:
+                storage_gb = 10.0
+                assumptions.append("Assuming default storage: 10 GB (actual usage may vary)")
+            
+            # Base storage pricing
+            if "oneZone" in performance_mode.lower():
+                price_per_gb = 0.16
+            else:
+                price_per_gb = 0.30  # Standard
+            
+            monthly_storage_cost = storage_gb * price_per_gb
+            
+            # Add provisioned throughput cost if specified
+            throughput_cost = 0
+            provisioned_throughput = usage.get("provisioned_throughput_mbps", 0)
+            if provisioned_throughput > 0:
+                throughput_cost = provisioned_throughput * 0.05 * 730  # $0.05 per MB/s-hour
+                assumptions.append(f"Provisioned throughput: {provisioned_throughput} MB/s × $0.05/MB/s-hour × 730 hours = ${throughput_cost:.2f}/month")
+            
+            total_monthly_cost = (monthly_storage_cost + throughput_cost) * resolved_count
+            
+            assumptions.append(f"EFS Performance Mode: {performance_mode}")
+            assumptions.append(f"Storage: {storage_gb} GB × ${price_per_gb:.3f}/GB = ${monthly_storage_cost:.2f}/month")
+            assumptions.append("Note: Actual costs depend on storage usage and throughput - this assumes minimal usage")
+            
+            return CostLineItem(
+                cloud="aws",
+                service="EFS",
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=total_monthly_cost,
+                pricing_unit="month",
+                assumptions=assumptions,
+                priced=True,
+                confidence="low"  # Low - storage usage varies significantly
+            )
+        
+        # Special handling for ElastiCache
+        if terraform_type in ["aws_elasticache_cluster", "aws_elasticache_replication_group"]:
+            # ElastiCache pricing: node cost (based on instance type) + data transfer
+            # We need instance type from size_hint
+            instance_type_from_hint = size_hint.get("instance_type") or size_hint.get("node_type")
+            
+            if instance_type_from_hint:
+                try:
+                    # Try to get pricing - ElastiCache uses similar instance types to EC2
+                    # Use EC2 pricing as approximation (ElastiCache pricing is typically similar)
+                    hourly_price = None
+                    if self.aws_bulk_client:
+                        hourly_price = await self.aws_bulk_client.get_ec2_instance_price(
+                            instance_type_from_hint,
+                            resolved_region
+                        )
+                    elif self.aws_client:
+                        hourly_price = await self.aws_client.get_ec2_instance_price(
+                            instance_type_from_hint,
+                            resolved_region
+                        )
+                    
+                    if hourly_price:
+                        node_count = resolved_count
+                        monthly_cost = hourly_price * 730 * node_count
+                        
+                        assumptions.append(f"ElastiCache node type: {instance_type_from_hint}")
+                        assumptions.append(f"Node count: {node_count}")
+                        assumptions.append(f"Cost: {node_count} × ${hourly_price:.4f}/hour × 730 hours = ${monthly_cost:.2f}/month")
+                        assumptions.append("Note: Using EC2 pricing as approximation - ElastiCache pricing may vary slightly")
+                        assumptions.append("Note: Data transfer costs may apply for cross-AZ or internet traffic")
+                        
+                        return CostLineItem(
+                            cloud="aws",
+                            service="ElastiCache",
+                            resource_name=resource_name,
+                            terraform_type=terraform_type,
+                            region=resolved_region,
+                            monthly_cost_usd=monthly_cost,
+                            pricing_unit="month",
+                            assumptions=assumptions,
+                            priced=True,
+                            confidence="medium"
+                        )
+                except Exception as error:
+                    logger.debug(f"Could not price ElastiCache for {resource_name}: {error}")
+            
+            # Fallback: estimate based on common cache node types
+            assumptions.append("Note: ElastiCache cost = node cost (priced separately) + data transfer")
+            assumptions.append("Common node types: cache.t3.micro (~$0.017/hour), cache.t3.small (~$0.034/hour)")
+            assumptions.append("Actual cost depends on node type and count - check ElastiCache pricing for exact costs")
+            
+            return CostLineItem(
+                cloud="aws",
+                service="ElastiCache",
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=0.0,  # Can't price without node type
+                pricing_unit="month",
+                assumptions=assumptions,
+                priced=True,
+                confidence="low"
+            )
+        
+        # Special handling for API Gateway
+        if terraform_type == "aws_api_gateway_rest_api":
+            # API Gateway pricing: free tier + requests
+            # First 1M requests/month free, then $3.50 per 1M requests
+            # Default assumption: minimal usage (within free tier)
+            requests_per_month = usage.get("requests_per_month", 100000)  # Default 100K requests
+            if requests_per_month == 0:
+                requests_per_month = 100000
+                assumptions.append("Assuming minimal API usage: 100,000 requests/month (within free tier)")
+            
+            # Free tier: first 1M requests/month
+            free_tier_requests = 1000000
+            billable_requests = max(0, requests_per_month - free_tier_requests)
+            request_cost = (billable_requests / 1000000) * 3.50  # $3.50 per 1M requests
+            
+            total_monthly_cost = request_cost * resolved_count
+            
+            if requests_per_month <= free_tier_requests:
+                assumptions.append(f"API Gateway requests: {requests_per_month:,} requests/month (within free tier - $0)")
+                assumptions.append("Free tier: First 1M requests/month are free")
+            else:
+                assumptions.append(f"API Gateway requests: {requests_per_month:,} requests/month")
+                assumptions.append(f"Billable requests: {billable_requests:,} × $3.50/1M = ${request_cost:.2f}/month")
+            
+            assumptions.append("Note: Additional costs for caching, custom domains, and data transfer may apply")
+            
+            return CostLineItem(
+                cloud="aws",
+                service="API Gateway",
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=total_monthly_cost,
+                pricing_unit="month",
+                assumptions=assumptions,
+                priced=True,
+                confidence="low"  # Low - request volume varies significantly
+            )
+        
+        # Special handling for CloudFront
+        if terraform_type == "aws_cloudfront_distribution":
+            # CloudFront pricing: data transfer out + requests
+            # Data transfer: ~$0.085/GB (first 10 TB), varies by region
+            # Requests: ~$0.0075 per 10,000 HTTPS requests
+            data_transfer_gb = usage.get("data_transfer_gb", 10.0)  # Default 10 GB
+            if data_transfer_gb == 0:
+                data_transfer_gb = 10.0
+                assumptions.append("Assuming minimal data transfer: 10 GB/month (idle/light usage)")
+            
+            requests_per_month = usage.get("requests_per_month", 10000)  # Default 10K requests
+            if requests_per_month == 0:
+                requests_per_month = 10000
+                assumptions.append("Assuming minimal requests: 10,000 requests/month")
+            
+            # Data transfer cost (first 10 TB tier)
+            data_transfer_cost = data_transfer_gb * 0.085  # $0.085 per GB
+            
+            # Request cost (HTTPS requests)
+            request_cost = (requests_per_month / 10000) * 0.0075  # $0.0075 per 10K requests
+            
+            total_monthly_cost = (data_transfer_cost + request_cost) * resolved_count
+            
+            assumptions.append(f"CloudFront data transfer: {data_transfer_gb} GB × $0.085/GB = ${data_transfer_cost:.2f}/month")
+            assumptions.append(f"CloudFront requests: {requests_per_month:,} requests × $0.0075/10K = ${request_cost:.2f}/month")
+            assumptions.append("Note: CloudFront pricing varies by region and data transfer volume - this assumes minimal usage")
+            
+            return CostLineItem(
+                cloud="aws",
+                service="CloudFront",
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=total_monthly_cost,
+                pricing_unit="month",
+                assumptions=assumptions,
+                priced=True,
+                confidence="low"  # Low - CDN usage varies greatly
+            )
+        
+        # Special handling for Lambda
+        if terraform_type == "aws_lambda_function":
+            # Lambda pricing: free tier + invocations + compute time
+            # First 1M requests/month free, then $0.20 per 1M requests
+            # Compute: $0.0000166667 per GB-second (first 400K GB-seconds free)
+            # Default assumption: minimal usage (within free tier)
+            invocations_per_month = usage.get("invocations_per_month", 100000)  # Default 100K invocations
+            if invocations_per_month == 0:
+                invocations_per_month = 100000
+                assumptions.append("Assuming minimal Lambda invocations: 100,000/month (within free tier)")
+            
+            memory_mb = size_hint.get("memory", 128)  # Default 128 MB
+            duration_ms = usage.get("duration_ms", 100)  # Default 100ms
+            duration_seconds = duration_ms / 1000.0
+            
+            # Free tier: 1M requests, 400K GB-seconds
+            free_tier_requests = 1000000
+            free_tier_gb_seconds = 400000
+            
+            billable_requests = max(0, invocations_per_month - free_tier_requests)
+            request_cost = (billable_requests / 1000000) * 0.20  # $0.20 per 1M requests
+            
+            # Compute cost
+            gb_seconds = invocations_per_month * (memory_mb / 1024.0) * duration_seconds
+            billable_gb_seconds = max(0, gb_seconds - free_tier_gb_seconds)
+            compute_cost = billable_gb_seconds * 0.0000166667  # Per GB-second
+            
+            total_monthly_cost = (request_cost + compute_cost) * resolved_count
+            
+            if invocations_per_month <= free_tier_requests and gb_seconds <= free_tier_gb_seconds:
+                assumptions.append(f"Lambda invocations: {invocations_per_month:,}/month (within free tier - $0)")
+                assumptions.append(f"Lambda compute: {gb_seconds:.0f} GB-seconds/month (within free tier - $0)")
+                assumptions.append("Free tier: First 1M requests and 400K GB-seconds/month are free")
+            else:
+                assumptions.append(f"Lambda invocations: {invocations_per_month:,}/month")
+                assumptions.append(f"Lambda compute: {gb_seconds:.0f} GB-seconds/month (memory: {memory_mb} MB, duration: {duration_ms}ms)")
+                assumptions.append(f"Billable requests: {billable_requests:,} × $0.20/1M = ${request_cost:.2f}/month")
+                assumptions.append(f"Billable compute: {billable_gb_seconds:.0f} GB-seconds × $0.0000166667 = ${compute_cost:.2f}/month")
+            
+            assumptions.append("Note: Actual Lambda costs depend heavily on invocation count and execution time")
+            
+            return CostLineItem(
+                cloud="aws",
+                service="Lambda",
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=total_monthly_cost,
+                pricing_unit="month",
+                assumptions=assumptions,
+                priced=True,
+                confidence="low"  # Low - Lambda costs vary greatly with usage
+            )
+        
+        # Special handling for Transit Gateway
+        if terraform_type == "aws_ec2_transit_gateway":
+            # Transit Gateway pricing: ~$0.05/hour + data processing
+            # Base cost: $0.05/hour * 730 hours/month = ~$36.50/month
+            # Data processing: $0.02 per GB processed
+            data_transfer_gb = usage.get("data_transfer_gb", 0)
+            if data_transfer_gb == 0:
+                data_transfer_gb = 1.0
+                assumptions.append("Assuming minimal data transfer: 1 GB/month (idle/light usage)")
+            
+            hourly_cost = 0.05  # Base Transit Gateway hourly cost
+            monthly_base = hourly_cost * 730  # ~$36.50/month
+            data_processing_cost = data_transfer_gb * 0.02  # $0.02 per GB processed
+            
+            total_monthly_cost = (monthly_base + data_processing_cost) * resolved_count
+            
+            assumptions.append(f"Transit Gateway base cost: ${hourly_cost:.4f}/hour × 730 hours = ${monthly_base:.2f}/month")
+            assumptions.append(f"Data processing: {data_transfer_gb} GB × $0.02/GB = ${data_processing_cost:.2f}")
+            assumptions.append("Note: Actual costs depend on data transfer volume - this assumes minimal traffic")
+            
+            return CostLineItem(
+                cloud="aws",
+                service="VPC",
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=total_monthly_cost,
+                pricing_unit="month",
+                assumptions=assumptions,
+                priced=True,
+                confidence="medium"
+            )
+        
+        # Special handling for ECS Fargate
+        if terraform_type == "aws_ecs_service" and size_hint.get("launch_type") == "FARGATE":
+            # Fargate pricing: vCPU + memory
+            # vCPU: ~$0.04048 per vCPU-hour
+            # Memory: ~$0.004445 per GB-hour
+            # Default assumption: 0.25 vCPU, 0.5 GB (minimal task)
+            vcpu = usage.get("vcpu", 0.25)
+            memory_gb = usage.get("memory_gb", 0.5)
+            if vcpu == 0:
+                vcpu = 0.25
+                assumptions.append("Assuming minimal vCPU: 0.25 vCPU (minimal task configuration)")
+            if memory_gb == 0:
+                memory_gb = 0.5
+                assumptions.append("Assuming minimal memory: 0.5 GB (minimal task configuration)")
+            
+            task_count = resolved_count if resolved_count > 0 else 1
+            hours_per_month = usage.get("hours_per_month", 730)  # Default 24/7
+            
+            vcpu_cost = vcpu * 0.04048 * hours_per_month * task_count
+            memory_cost = memory_gb * 0.004445 * hours_per_month * task_count
+            
+            total_monthly_cost = vcpu_cost + memory_cost
+            
+            assumptions.append(f"Fargate task configuration: {vcpu} vCPU, {memory_gb} GB memory")
+            assumptions.append(f"Task count: {task_count}")
+            assumptions.append(f"vCPU cost: {vcpu} × $0.04048/vCPU-hour × {hours_per_month} hours × {task_count} tasks = ${vcpu_cost:.2f}/month")
+            assumptions.append(f"Memory cost: {memory_gb} GB × $0.004445/GB-hour × {hours_per_month} hours × {task_count} tasks = ${memory_cost:.2f}/month")
+            assumptions.append("Note: Actual costs depend on task count and runtime - this assumes minimal configuration")
+            
+            return CostLineItem(
+                cloud="aws",
+                service="ECS",
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=total_monthly_cost,
+                pricing_unit="month",
+                assumptions=assumptions,
+                priced=True,
+                confidence="low"  # Low - task count and runtime vary
+            )
+        
+        # Special handling for SNS (Simple Notification Service)
+        if terraform_type == "aws_sns_topic":
+            # SNS pricing: free tier + messages
+            # First 1M requests/month free, then $0.50 per 1M requests
+            # Default assumption: minimal usage (within free tier)
+            messages_per_month = usage.get("messages_per_month", 100000)  # Default 100K messages
+            if messages_per_month == 0:
+                messages_per_month = 100000
+                assumptions.append("Assuming minimal SNS messages: 100,000/month (within free tier)")
+            
+            free_tier_messages = 1000000
+            billable_messages = max(0, messages_per_month - free_tier_messages)
+            message_cost = (billable_messages / 1000000) * 0.50  # $0.50 per 1M messages
+            
+            total_monthly_cost = message_cost * resolved_count
+            
+            if messages_per_month <= free_tier_messages:
+                assumptions.append(f"SNS messages: {messages_per_month:,}/month (within free tier - $0)")
+                assumptions.append("Free tier: First 1M messages/month are free")
+            else:
+                assumptions.append(f"SNS messages: {messages_per_month:,}/month")
+                assumptions.append(f"Billable messages: {billable_messages:,} × $0.50/1M = ${message_cost:.2f}/month")
+            
+            assumptions.append("Note: Additional costs for SMS, email delivery, and data transfer may apply")
+            
+            return CostLineItem(
+                cloud="aws",
+                service="SNS",
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=total_monthly_cost,
+                pricing_unit="month",
+                assumptions=assumptions,
+                priced=True,
+                confidence="low"  # Low - message volume varies significantly
+            )
+        
+        # Special handling for SQS (Simple Queue Service)
+        if terraform_type == "aws_sqs_queue":
+            # SQS pricing: free tier + requests
+            # First 1M requests/month free, then $0.40 per 1M requests
+            # Default assumption: minimal usage (within free tier)
+            requests_per_month = usage.get("requests_per_month", 100000)  # Default 100K requests
+            if requests_per_month == 0:
+                requests_per_month = 100000
+                assumptions.append("Assuming minimal SQS requests: 100,000/month (within free tier)")
+            
+            free_tier_requests = 1000000
+            billable_requests = max(0, requests_per_month - free_tier_requests)
+            request_cost = (billable_requests / 1000000) * 0.40  # $0.40 per 1M requests
+            
+            total_monthly_cost = request_cost * resolved_count
+            
+            if requests_per_month <= free_tier_requests:
+                assumptions.append(f"SQS requests: {requests_per_month:,}/month (within free tier - $0)")
+                assumptions.append("Free tier: First 1M requests/month are free")
+            else:
+                assumptions.append(f"SQS requests: {requests_per_month:,}/month")
+                assumptions.append(f"Billable requests: {billable_requests:,} × $0.40/1M = ${request_cost:.2f}/month")
+            
+            assumptions.append("Note: Additional costs for data transfer and FIFO queues may apply")
+            
+            return CostLineItem(
+                cloud="aws",
+                service="SQS",
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=total_monthly_cost,
+                pricing_unit="month",
+                assumptions=assumptions,
+                priced=True,
+                confidence="low"  # Low - request volume varies significantly
+            )
         
         # Extract instance type or SKU
         # For RDS, also check instance_class (common in Terraform)

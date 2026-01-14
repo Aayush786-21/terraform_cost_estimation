@@ -14,17 +14,19 @@ from starlette.types import ASGIApp
 
 logger = logging.getLogger(__name__)
 
+# Set to False to disable rate limiting (for testing)
+RATE_LIMITING_ENABLED = False
 
 # Rate limit configuration: endpoint -> requests per window (per client/IP)
 RATE_LIMITS: Dict[str, int] = {
-    "/api/terraform/estimate": 50,
-    "/api/terraform/estimate/scenario": 50,
-    "/api/terraform/estimate/local": 50,
+    "/api/terraform/estimate": 20,
+    "/api/terraform/estimate/scenario": 20,
+    "/api/terraform/estimate/local": 20,
     "/api/terraform/insights": 5,
 }
 
-# Time window for rate limiting (seconds)
-RATE_LIMIT_WINDOW = 60
+# Time window for rate limiting (seconds) - 4 hours
+RATE_LIMIT_WINDOW = 4 * 60 * 60  # 14400 seconds = 4 hours
 
 
 class RateLimiter:
@@ -66,8 +68,9 @@ class RateLimiter:
                 session_str = str(sorted(session_items))
                 session_hash = hashlib.md5(session_str.encode()).hexdigest()[:8]
                 return f"session:{session_hash}"
-        except (AttributeError, KeyError, TypeError):
-            # Session not available, continue to other methods
+        except Exception:
+            # Session not available or SessionMiddleware not installed,
+            # continue to other identification methods.
             pass
         
         # Try X-Forwarded-For header (for proxied requests)
@@ -148,8 +151,14 @@ class RateLimiter:
         Returns:
             Number of remaining requests
         """
+        # Clean up expired timestamps, but be robust if entries are removed
         self._cleanup_expired(client_id, endpoint)
-        timestamps = self._storage[client_id][endpoint]
+        
+        client_data = self._storage.get(client_id)
+        if not client_data:
+            return limit
+        
+        timestamps = client_data.get(endpoint, [])
         current_count = len(timestamps)
         return max(0, limit - current_count)
 
@@ -180,6 +189,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Get endpoint path
         path = request.url.path
         
+        # Skip rate limiting if disabled
+        if not RATE_LIMITING_ENABLED:
+            response = await call_next(request)
+            return response
+        
         # Check if this endpoint should be rate limited
         if path in RATE_LIMITS:
             limit = RATE_LIMITS[path]
@@ -194,7 +208,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     remaining = _rate_limiter.get_remaining(client_id, path, limit)
                     logger.info(
                         f"Rate limit exceeded for endpoint {path} "
-                        f"(limit: {limit}/min, remaining: {remaining})"
+                        f"(limit: {limit}/4hrs, remaining: {remaining})"
                     )
                     
                     return JSONResponse(

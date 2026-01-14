@@ -820,6 +820,141 @@ body {
     outline-offset: 2px;
 }
 
+/* Rate Limit Modal */
+.rate-limit-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-lg);
+}
+
+.rate-limit-modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(2, 6, 23, 0.75);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.rate-limit-modal-content {
+    position: relative;
+    background: rgba(15, 23, 42, 0.95);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 18px;
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.85);
+    max-width: 500px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: modalFadeIn 0.3s ease;
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
+}
+
+.rate-limit-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-xl);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+    flex-shrink: 0;
+}
+
+.rate-limit-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #e5e7eb;
+    margin: 0;
+}
+
+.rate-limit-close {
+    background: none;
+    border: none;
+    font-size: 2rem;
+    color: #9ca3af;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+    line-height: 1;
+}
+
+.rate-limit-close:hover {
+    background: rgba(148, 163, 184, 0.15);
+    color: #e5e7eb;
+}
+
+.rate-limit-close:focus {
+    outline: 2px solid rgba(99, 102, 241, 0.6);
+    outline-offset: 2px;
+}
+
+.rate-limit-body {
+    padding: var(--space-xl);
+    text-align: center;
+}
+
+.rate-limit-icon {
+    font-size: 3rem;
+    margin-bottom: var(--space-lg);
+}
+
+.rate-limit-message {
+    font-size: 1rem;
+    color: #e5e7eb;
+    line-height: 1.6;
+    margin: 0;
+}
+
+.rate-limit-footer {
+    padding: var(--space-xl);
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+    display: flex;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.rate-limit-dismiss-btn {
+    padding: var(--space-sm) var(--space-xl);
+    background: rgba(99, 102, 241, 0.2);
+    color: #a5b4fc;
+    border: 1px solid rgba(99, 102, 241, 0.4);
+    border-radius: 12px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.rate-limit-dismiss-btn:hover {
+    background: rgba(99, 102, 241, 0.3);
+    border-color: rgba(99, 102, 241, 0.6);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
+}
+
+.rate-limit-dismiss-btn:focus {
+    outline: 2px solid rgba(99, 102, 241, 0.6);
+    outline-offset: 2px;
+}
+
 .scenario-delta-badge {
     display: block;
     margin-top: var(--space-xs);
