@@ -645,6 +645,50 @@ class CostEstimator:
                     confidence="low"
             )
         
+        # Special handling for Elastic IP (EIP)
+        if terraform_type == "aws_eip":
+            # Elastic IP pricing:
+            # - First IPv4 address associated with a running instance is often free
+            # - Additional/unattached IPv4 addresses are charged (~$0.005/hour)
+            #
+            # For estimation, treat each EIP as chargeable unless explicitly overridden.
+            # This gives a conservative view of potential EIP costs.
+            chargeable = usage.get("chargeable", True)
+            hourly_cost = 0.005  # ~$0.005/hour per chargeable EIP
+            monthly_base = hourly_cost * 730  # ~$3.65/month
+
+            if not chargeable:
+                # If user marks EIP as non-chargeable, assume $0 cost but keep the assumptions
+                assumptions.append(
+                    "Elastic IP marked as non-chargeable (associated with running instance within free tier)"
+                )
+                total_monthly_cost = 0.0
+            else:
+                assumptions.append(
+                    "Assuming Elastic IP is chargeable (unattached or additional IPv4 address)"
+                )
+                assumptions.append(
+                    f"Elastic IP cost: ${hourly_cost:.4f}/hour × 730 hours = ${monthly_base:.2f}/month"
+                )
+                total_monthly_cost = monthly_base * resolved_count
+
+            assumptions.append(
+                "Note: Actual EIP charges depend on association state and number of allocated addresses"
+            )
+
+            return CostLineItem(
+                cloud="aws",
+                service="EC2",
+                resource_name=resource_name,
+                terraform_type=terraform_type,
+                region=resolved_region,
+                monthly_cost_usd=total_monthly_cost,
+                pricing_unit="month",
+                assumptions=assumptions,
+                priced=True,
+                confidence="medium"  # Medium - base rate is fixed, but chargeability depends on usage
+            )
+
         # Special handling for NAT Gateway
         if terraform_type == "aws_nat_gateway":
             # NAT Gateway pricing: ~$0.045/hour + data processing (~$0.045/GB)
@@ -1664,6 +1708,29 @@ class CostEstimator:
         
         # Calculate total
         total_monthly_cost = sum(item.monthly_cost_usd for item in line_items)
+        
+        # Calculate confidence based on cost relative to highest cost item
+        if line_items:
+            # Find maximum cost
+            max_cost = max(item.monthly_cost_usd for item in line_items)
+            
+            # Update confidence for each line item based on percentage of max cost
+            for item in line_items:
+                if max_cost == 0:
+                    # All items are $0, keep original confidence
+                    continue
+                
+                cost_percentage = (item.monthly_cost_usd / max_cost) * 100
+                
+                # High confidence: highest cost (100%) OR 80-99% of max
+                if cost_percentage >= 80:
+                    item.confidence = "high"
+                # Medium confidence: 30-70% of max
+                elif cost_percentage >= 30:
+                    item.confidence = "medium"
+                # Low confidence: <30% of max
+                else:
+                    item.confidence = "low"
         
         # Use first priced resource's region, or default
         region = line_items[0].region if line_items else (region_override or "us-east-1")
