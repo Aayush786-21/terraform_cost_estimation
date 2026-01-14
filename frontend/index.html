@@ -134,18 +134,6 @@
                             </div>
                         </div>
                     </div>
-                    <div class="traffic-assumptions">
-                        <label for="users-input" class="traffic-label">Traffic Assumptions (Optional)</label>
-                        <input 
-                            type="number" 
-                            id="users-input" 
-                            name="users-input" 
-                            placeholder="Average users/month"
-                            min="0"
-                            class="traffic-input"
-                        />
-                        <span class="traffic-helper">Only affects request-based services when applicable</span>
-                    </div>
                     <div class="coverage-badges" id="coverage-badges">
                         <!-- Coverage badges rendered here -->
                     </div>
@@ -166,36 +154,23 @@
             </div>
         </section>
 
-        <!-- SECTION B: COST DRIVERS -->
-        <section class="cost-drivers-section">
-            <h2 class="section-title">Where Your Costs Go</h2>
-            <p class="section-description">Click a category to see detailed breakdown</p>
-            <div id="cost-drivers" class="cost-drivers-grid">
-                <!-- Cost driver cards rendered here -->
-            </div>
-        </section>
-
         <!-- SECTION C: DETAILED BREAKDOWN (Expandable) -->
         <section class="breakdown-section">
             <div class="breakdown-header">
                 <h2 class="section-title">Detailed Breakdown</h2>
-                <button id="toggle-breakdown" class="expand-button" aria-expanded="false">
-                    <span class="button-text">Show Details</span>
-                    <span class="button-icon">▼</span>
-                </button>
             </div>
-            <div id="breakdown-content" class="breakdown-content" style="display: none;">
+            <div id="breakdown-content" class="breakdown-content" style="display: block;">
                 <div class="table-container">
                     <table id="cost-table" class="cost-table">
                         <thead>
                             <tr>
-                                <th>Cloud</th>
-                                <th>Service</th>
-                                <th>Resource Name</th>
-                                <th>Region</th>
-                                <th class="cost-column">Monthly Cost (USD)</th>
-                                <th>Confidence</th>
-                                <th>Assumptions</th>
+                                <th class="cloud-column">Cloud</th>
+                                <th class="service-column">Service</th>
+                                <th class="resource-column">Resource Name</th>
+                                <th class="region-column">Region</th>
+                                <th class="cost-column">Monthly Cost</th>
+                                <th class="confidence-column">Confidence</th>
+                                <th class="assumptions-column">Assumptions</th>
                             </tr>
                         </thead>
                         <tbody id="cost-table-body">

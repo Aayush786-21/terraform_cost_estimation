@@ -33,6 +33,13 @@ class Config:
     MISTRAL_TIMEOUT: int = 120  # 2 minutes for large Terraform files
     MISTRAL_MAX_TOKENS: int = 8192  # Maximum tokens for response
     
+    # OpenAI Configuration (fallback)
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    OPENAI_API_BASE_URL: str = "https://api.openai.com/v1"
+    OPENAI_TIMEOUT: int = 120  # 2 minutes for large Terraform files
+    OPENAI_MAX_TOKENS: int = 8192  # Maximum tokens for response
+    
     # Pricing Configuration
     AWS_PRICING_REGION: str = os.getenv("AWS_PRICING_REGION", "us-east-1")
     PRICING_CACHE_TTL_SECONDS: int = int(os.getenv("PRICING_CACHE_TTL_SECONDS", "86400"))  # 24 hours

@@ -89,15 +89,6 @@
             </div>
         </section>
 
-        <!-- SECTION B: COST DRIVERS -->
-        <section class="cost-drivers-section">
-            <h2 class="section-title">Cost Drivers</h2>
-            <p class="section-description">Breakdown by category</p>
-            <div id="cost-drivers" class="cost-drivers-grid">
-                <!-- Cost driver cards rendered here -->
-            </div>
-        </section>
-
         <!-- SECTION C: DETAILED BREAKDOWN (Always visible in shared view) -->
         <section class="breakdown-section">
             <div class="breakdown-header">
@@ -107,12 +98,13 @@
                 <table class="cost-table">
                     <thead>
                         <tr>
-                            <th>Cloud</th>
-                            <th>Service</th>
-                            <th>Resource</th>
-                            <th>Region</th>
-                            <th>Monthly Cost</th>
-                            <th>Confidence</th>
+                            <th class="cloud-column">Cloud</th>
+                            <th class="service-column">Service</th>
+                            <th class="resource-column">Resource Name</th>
+                            <th class="region-column">Region</th>
+                            <th class="cost-column">Monthly Cost</th>
+                            <th class="confidence-column">Confidence</th>
+                            <th class="assumptions-column">Assumptions</th>
                         </tr>
                     </thead>
                     <tbody id="cost-table-body">

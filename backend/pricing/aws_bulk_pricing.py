@@ -174,6 +174,7 @@ class AWSBulkPricingClient:
                 os = attributes.get("operatingSystem", "")
                 tenancy = attributes.get("tenancy", "")
                 capacity = attributes.get("capacitystatus", "")
+                preinstalled = attributes.get("preInstalledSw", "")
                 
                 if instance_type and os and tenancy:
                     # Build lookup key WITHOUT capacitystatus (matches our filter)
@@ -194,25 +195,31 @@ class AWSBulkPricingClient:
                             if price_per_unit:
                                 index_key = (service_code, region_code, lookup_key)
                                 price = float(price_per_unit)
+
+                                # Only index standard images without pre-installed software (e.g. SQL Web)
+                                # This avoids accidentally picking more expensive "Linux with SQL" SKUs
+                                # when the caller just asks for generic Linux pricing.
+                                is_plain_image = preinstalled in ("NA", "", None)
                                 
-                                # Prefer "Used" capacity over reservations
+                                # Prefer "Used" capacity over reservations, but only for plain images
                                 # Only store if not already indexed, or if replacing a reservation with "Used"
-                                if index_key in self._price_index:
-                                    # Check if existing is a reservation
-                                    existing_sku = self._sku_index.get(index_key)
-                                    if existing_sku:
-                                        existing_product = products.get(existing_sku, {})
-                                        existing_capacity = existing_product.get("attributes", {}).get("capacitystatus", "").lower()
-                                        # Replace reservation with standard "Used" pricing
-                                        if existing_capacity != "used" and capacity.lower() == "used":
+                                if is_plain_image:
+                                    if index_key in self._price_index:
+                                        # Check if existing is a reservation
+                                        existing_sku = self._sku_index.get(index_key)
+                                        if existing_sku:
+                                            existing_product = products.get(existing_sku, {})
+                                            existing_capacity = existing_product.get("attributes", {}).get("capacitystatus", "").lower()
+                                            # Replace reservation with standard "Used" pricing
+                                            if existing_capacity != "used" and capacity.lower() == "used":
+                                                self._price_index[index_key] = price
+                                                self._sku_index[index_key] = sku
+                                    else:
+                                        # First time seeing this key - only index if it's "Used" capacity
+                                        if capacity.lower() == "used":
                                             self._price_index[index_key] = price
                                             self._sku_index[index_key] = sku
-                                else:
-                                    # First time seeing this key - only index if it's "Used" capacity
-                                    if capacity.lower() == "used":
-                                        self._price_index[index_key] = price
-                                        self._sku_index[index_key] = sku
-                                        indexed_count += 1
+                                            indexed_count += 1
             
             # Index RDS instances
             elif service_code == "AmazonRDS":
@@ -328,33 +335,49 @@ class AWSBulkPricingClient:
         
         matching_skus.sort(key=sku_priority)
         
-        # Try each SKU in priority order until we find one with a price
-        for matching_sku, _ in matching_skus:
-            # Extract OnDemand price
-            if matching_sku not in terms:
-                continue
+        # Helper to compute the lowest OnDemand hourly price for a set of SKUs
+        def find_lowest_price(candidates):
+            best_price = None
+            best_sku = None
             
-            term_entries = terms[matching_sku]
-            # Get first term (usually there's only one for OnDemand)
-            term_code = list(term_entries.keys())[0]
-            price_dimensions = term_entries[term_code].get("priceDimensions", {})
+            for sku, _capacity in candidates:
+                if sku not in terms:
+                    continue
+                
+                term_entries = terms[sku]
+                for term_code, term_data in term_entries.items():
+                    price_dimensions = term_data.get("priceDimensions", {})
+                    if not price_dimensions:
+                        continue
+                    
+                    for dim in price_dimensions.values():
+                        price_per_unit = dim.get("pricePerUnit", {}).get("USD")
+                        if not price_per_unit:
+                            continue
+                        try:
+                            price = float(price_per_unit)
+                        except (TypeError, ValueError):
+                            continue
+                        
+                        if best_price is None or price < best_price:
+                            best_price = price
+                            best_sku = sku
             
-            if not price_dimensions:
-                continue
-            
-            # Get first price dimension
-            dimension_code = list(price_dimensions.keys())[0]
-            price_per_unit = price_dimensions[dimension_code].get("pricePerUnit", {}).get("USD")
-            
-            if price_per_unit:
-                price = float(price_per_unit)
-                # Only cache if it's the best match (Used capacity)
-                if matching_skus[0][1] == "used":
-                    self._price_index[index_key] = price
-                    self._sku_index[index_key] = matching_sku
-                return price
+            return best_price, best_sku
         
-        return None
+        # First, try to find the lowest price among "Used" capacity SKUs
+        used_skus = [s for s in matching_skus if s[1] == "used"]
+        price, best_sku = find_lowest_price(used_skus if used_skus else matching_skus)
+        
+        if price is None:
+            return None
+        
+        # Cache only when we have a concrete best SKU
+        if best_sku is not None:
+            self._price_index[index_key] = price
+            self._sku_index[index_key] = best_sku
+        
+        return price
     
     def _prewarm_common_regions(self) -> None:
         """

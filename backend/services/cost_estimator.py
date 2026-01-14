@@ -200,19 +200,301 @@ class CostEstimator:
         count_model = resource.get("count_model", {})
         confidence = count_model.get("confidence", "low")
         
-        # Handle free/low-cost networking resources (these don't have instance_type)
-        free_networking_resources = {
+        # Handle free/low-cost resources (these don't have instance_type)
+        # Comprehensive list of AWS services that are free or have no base charge
+        free_resources = {
+            # VPC & Networking (Free)
             "aws_vpc": ("VPC", "Free - VPCs have no charge"),
             "aws_subnet": ("VPC", "Free - Subnets have no charge"),
             "aws_internet_gateway": ("VPC", "Free - Internet gateways have no charge"),
+            "aws_egress_only_internet_gateway": ("VPC", "Free - Egress-only internet gateways have no charge"),
             "aws_route_table": ("VPC", "Free - Route tables have no charge"),
             "aws_route_table_association": ("VPC", "Free - Route table associations have no charge"),
+            "aws_route": ("VPC", "Free - Routes have no charge"),
+            "aws_main_route_table_association": ("VPC", "Free - Main route table associations have no charge"),
+            "aws_network_acl": ("VPC", "Free - Network ACLs have no charge"),
+            "aws_network_acl_rule": ("VPC", "Free - Network ACL rules have no charge"),
+            "aws_vpc_dhcp_options": ("VPC", "Free - DHCP options sets have no charge"),
+            "aws_vpc_dhcp_options_association": ("VPC", "Free - DHCP options associations have no charge"),
+            "aws_vpc_peering_connection": ("VPC", "Free - VPC peering connections have no charge"),
+            "aws_vpc_peering_connection_accepter": ("VPC", "Free - VPC peering accepters have no charge"),
+            "aws_vpc_endpoint_service": ("VPC", "Free - VPC endpoint services have no charge"),
+            "aws_vpc_endpoint_route_table_association": ("VPC", "Free - VPC endpoint route table associations have no charge"),
+            "aws_vpc_endpoint_subnet_association": ("VPC", "Free - VPC endpoint subnet associations have no charge"),
+            "aws_vpc_ipv4_cidr_block_association": ("VPC", "Free - VPC IPv4 CIDR block associations have no charge"),
+            "aws_customer_gateway": ("VPC", "Free - Customer gateways have no charge"),
             "aws_security_group": ("EC2", "Free - Security groups have no charge"),
             "aws_security_group_rule": ("EC2", "Free - Security group rules have no charge"),
+            "aws_default_security_group": ("EC2", "Free - Default security groups have no charge"),
+            "aws_default_vpc": ("VPC", "Free - Default VPCs have no charge"),
+            "aws_default_subnet": ("VPC", "Free - Default subnets have no charge"),
+            "aws_default_route_table": ("VPC", "Free - Default route tables have no charge"),
+            "aws_default_network_acl": ("VPC", "Free - Default network ACLs have no charge"),
+            
+            # IAM (Free)
+            "aws_iam_role": ("IAM", "Free - IAM roles have no charge"),
+            "aws_iam_role_policy": ("IAM", "Free - IAM role policies have no charge"),
+            "aws_iam_role_policy_attachment": ("IAM", "Free - IAM role policy attachments have no charge"),
+            "aws_iam_policy": ("IAM", "Free - IAM policies have no charge"),
+            "aws_iam_policy_attachment": ("IAM", "Free - IAM policy attachments have no charge"),
+            "aws_iam_instance_profile": ("IAM", "Free - IAM instance profiles have no charge"),
+            "aws_iam_user": ("IAM", "Free - IAM users have no charge"),
+            "aws_iam_user_policy": ("IAM", "Free - IAM user policies have no charge"),
+            "aws_iam_user_policy_attachment": ("IAM", "Free - IAM user policy attachments have no charge"),
+            "aws_iam_user_group_membership": ("IAM", "Free - IAM user group memberships have no charge"),
+            "aws_iam_group": ("IAM", "Free - IAM groups have no charge"),
+            "aws_iam_group_policy": ("IAM", "Free - IAM group policies have no charge"),
+            "aws_iam_group_policy_attachment": ("IAM", "Free - IAM group policy attachments have no charge"),
+            "aws_iam_group_membership": ("IAM", "Free - IAM group memberships have no charge"),
+            "aws_iam_access_key": ("IAM", "Free - IAM access keys have no charge"),
+            "aws_iam_saml_provider": ("IAM", "Free - IAM SAML providers have no charge"),
+            "aws_iam_openid_connect_provider": ("IAM", "Free - IAM OpenID Connect providers have no charge"),
+            "aws_iam_server_certificate": ("IAM", "Free - IAM server certificates have no charge"),
+            "aws_iam_service_linked_role": ("IAM", "Free - IAM service-linked roles have no charge"),
+            
+            # CloudWatch (Free tier available)
+            "aws_cloudwatch_log_group": ("CloudWatch", "Free - CloudWatch Log Groups have no charge (pay for ingestion/storage)"),
+            "aws_cloudwatch_log_stream": ("CloudWatch", "Free - CloudWatch Log Streams have no charge"),
+            "aws_cloudwatch_log_metric_filter": ("CloudWatch", "Free - CloudWatch Log Metric Filters have no charge"),
+            "aws_cloudwatch_log_destination": ("CloudWatch", "Free - CloudWatch Log Destinations have no charge"),
+            "aws_cloudwatch_log_destination_policy": ("CloudWatch", "Free - CloudWatch Log Destination Policies have no charge"),
+            "aws_cloudwatch_log_resource_policy": ("CloudWatch", "Free - CloudWatch Log Resource Policies have no charge"),
+            "aws_cloudwatch_metric_alarm": ("CloudWatch", "Free - CloudWatch Metric Alarms have no charge"),
+            "aws_cloudwatch_composite_alarm": ("CloudWatch", "Free - CloudWatch Composite Alarms have no charge"),
+            "aws_cloudwatch_dashboard": ("CloudWatch", "Free - CloudWatch Dashboards have no charge"),
+            "aws_cloudwatch_event_rule": ("CloudWatch", "Free - CloudWatch Event Rules have no charge (pay for targets)"),
+            "aws_cloudwatch_event_target": ("CloudWatch", "Free - CloudWatch Event Targets have no charge"),
+            "aws_cloudwatch_event_permission": ("CloudWatch", "Free - CloudWatch Event Permissions have no charge"),
+            "aws_cloudwatch_event_bus": ("CloudWatch", "Free - CloudWatch Event Buses have no charge"),
+            "aws_cloudwatch_event_archive": ("CloudWatch", "Free - CloudWatch Event Archives have no charge"),
+            "aws_cloudwatch_event_connection": ("CloudWatch", "Free - CloudWatch Event Connections have no charge"),
+            "aws_cloudwatch_event_api_destination": ("CloudWatch", "Free - CloudWatch Event API Destinations have no charge"),
+            
+            # CloudFormation (Free)
+            "aws_cloudformation_stack": ("CloudFormation", "Free - CloudFormation stacks have no charge"),
+            "aws_cloudformation_stack_set": ("CloudFormation", "Free - CloudFormation stack sets have no charge"),
+            "aws_cloudformation_stack_set_instance": ("CloudFormation", "Free - CloudFormation stack set instances have no charge"),
+            
+            # Route 53 (Free tier available)
+            "aws_route53_zone": ("Route53", "Free - Route 53 hosted zones have no charge (first zone free)"),
+            "aws_route53_record": ("Route53", "Free - Route 53 records have no charge"),
+            "aws_route53_health_check": ("Route53", "Free - Route 53 health checks have no charge (first 50 free)"),
+            "aws_route53_delegation_set": ("Route53", "Free - Route 53 delegation sets have no charge"),
+            "aws_route53_query_log": ("Route53", "Free - Route 53 query logs have no charge"),
+            "aws_route53_vpc_association_authorization": ("Route53", "Free - Route 53 VPC association authorizations have no charge"),
+            
+            # SNS (Free tier available)
+            "aws_sns_topic": ("SNS", "Free - SNS topics have no charge (pay for messages)"),
+            "aws_sns_topic_policy": ("SNS", "Free - SNS topic policies have no charge"),
+            "aws_sns_topic_subscription": ("SNS", "Free - SNS topic subscriptions have no charge"),
+            
+            # SQS (Free tier available)
+            "aws_sqs_queue": ("SQS", "Free - SQS queues have no charge (pay for requests)"),
+            "aws_sqs_queue_policy": ("SQS", "Free - SQS queue policies have no charge"),
+            
+            # EventBridge (Free tier available)
+            "aws_cloudwatch_event_rule": ("EventBridge", "Free - EventBridge rules have no charge (pay for targets)"),
+            "aws_cloudwatch_event_target": ("EventBridge", "Free - EventBridge targets have no charge"),
+            "aws_cloudwatch_event_bus": ("EventBridge", "Free - EventBridge event buses have no charge"),
+            
+            # API Gateway (Free tier available)
+            "aws_api_gateway_rest_api": ("API Gateway", "Free - API Gateway REST APIs have no charge (pay for requests)"),
+            "aws_api_gateway_resource": ("API Gateway", "Free - API Gateway resources have no charge"),
+            "aws_api_gateway_method": ("API Gateway", "Free - API Gateway methods have no charge"),
+            "aws_api_gateway_integration": ("API Gateway", "Free - API Gateway integrations have no charge"),
+            "aws_api_gateway_deployment": ("API Gateway", "Free - API Gateway deployments have no charge"),
+            "aws_api_gateway_stage": ("API Gateway", "Free - API Gateway stages have no charge"),
+            "aws_api_gateway_api_key": ("API Gateway", "Free - API Gateway API keys have no charge"),
+            "aws_api_gateway_usage_plan": ("API Gateway", "Free - API Gateway usage plans have no charge"),
+            "aws_api_gateway_usage_plan_key": ("API Gateway", "Free - API Gateway usage plan keys have no charge"),
+            "aws_api_gateway_method_response": ("API Gateway", "Free - API Gateway method responses have no charge"),
+            "aws_api_gateway_integration_response": ("API Gateway", "Free - API Gateway integration responses have no charge"),
+            "aws_api_gateway_gateway_response": ("API Gateway", "Free - API Gateway gateway responses have no charge"),
+            "aws_api_gateway_model": ("API Gateway", "Free - API Gateway models have no charge"),
+            "aws_api_gateway_request_validator": ("API Gateway", "Free - API Gateway request validators have no charge"),
+            "aws_api_gateway_base_path_mapping": ("API Gateway", "Free - API Gateway base path mappings have no charge"),
+            "aws_api_gateway_vpc_link": ("API Gateway", "Free - API Gateway VPC links have no charge"),
+            "aws_api_gateway_authorizer": ("API Gateway", "Free - API Gateway authorizers have no charge"),
+            "aws_api_gateway_account": ("API Gateway", "Free - API Gateway accounts have no charge"),
+            "aws_api_gateway_client_certificate": ("API Gateway", "Free - API Gateway client certificates have no charge"),
+            "aws_api_gateway_documentation_part": ("API Gateway", "Free - API Gateway documentation parts have no charge"),
+            "aws_api_gateway_documentation_version": ("API Gateway", "Free - API Gateway documentation versions have no charge"),
+            "aws_api_gateway_response": ("API Gateway", "Free - API Gateway responses have no charge"),
+            
+            # Certificate Manager (Free)
+            "aws_acm_certificate": ("ACM", "Free - ACM certificates have no charge"),
+            "aws_acm_certificate_validation": ("ACM", "Free - ACM certificate validations have no charge"),
+            
+            # Secrets Manager (Free tier available)
+            "aws_secretsmanager_secret": ("Secrets Manager", "Free - Secrets Manager secrets have no charge (pay for API calls)"),
+            "aws_secretsmanager_secret_version": ("Secrets Manager", "Free - Secrets Manager secret versions have no charge"),
+            
+            # Systems Manager (Free tier available)
+            "aws_ssm_parameter": ("Systems Manager", "Free - SSM parameters have no charge (Standard tier free)"),
+            "aws_ssm_document": ("Systems Manager", "Free - SSM documents have no charge"),
+            "aws_ssm_association": ("Systems Manager", "Free - SSM associations have no charge"),
+            "aws_ssm_maintenance_window": ("Systems Manager", "Free - SSM maintenance windows have no charge"),
+            "aws_ssm_maintenance_window_target": ("Systems Manager", "Free - SSM maintenance window targets have no charge"),
+            "aws_ssm_maintenance_window_task": ("Systems Manager", "Free - SSM maintenance window tasks have no charge"),
+            "aws_ssm_patch_baseline": ("Systems Manager", "Free - SSM patch baselines have no charge"),
+            "aws_ssm_patch_group": ("Systems Manager", "Free - SSM patch groups have no charge"),
+            
+            # CloudTrail (Free tier available)
+            "aws_cloudtrail": ("CloudTrail", "Free - CloudTrail trails have no charge (first trail free)"),
+            
+            # Config (Free tier available)
+            "aws_config_configuration_recorder": ("Config", "Free - Config recorders have no charge"),
+            "aws_config_delivery_channel": ("Config", "Free - Config delivery channels have no charge"),
+            "aws_config_config_rule": ("Config", "Free - Config rules have no charge"),
+            "aws_config_configuration_aggregator": ("Config", "Free - Config aggregators have no charge"),
+            "aws_config_aggregate_authorization": ("Config", "Free - Config aggregate authorizations have no charge"),
+            "aws_config_organization_custom_rule": ("Config", "Free - Config organization custom rules have no charge"),
+            "aws_config_organization_managed_rule": ("Config", "Free - Config organization managed rules have no charge"),
+            
+            # KMS (Free tier available)
+            "aws_kms_key": ("KMS", "Free - KMS keys have no charge (pay for API calls)"),
+            "aws_kms_alias": ("KMS", "Free - KMS aliases have no charge"),
+            "aws_kms_grant": ("KMS", "Free - KMS grants have no charge"),
+            "aws_kms_ciphertext": ("KMS", "Free - KMS ciphertexts have no charge"),
+            "aws_kms_external_key": ("KMS", "Free - KMS external keys have no charge"),
+            "aws_kms_replica_key": ("KMS", "Free - KMS replica keys have no charge"),
+            "aws_kms_replica_external_key": ("KMS", "Free - KMS replica external keys have no charge"),
+            
+            # Lambda Layers (Free)
+            "aws_lambda_layer_version": ("Lambda", "Free - Lambda layers have no charge"),
+            "aws_lambda_permission": ("Lambda", "Free - Lambda permissions have no charge"),
+            "aws_lambda_event_source_mapping": ("Lambda", "Free - Lambda event source mappings have no charge"),
+            "aws_lambda_function_event_invoke_config": ("Lambda", "Free - Lambda function event invoke configs have no charge"),
+            "aws_lambda_code_signing_config": ("Lambda", "Free - Lambda code signing configs have no charge"),
+            "aws_lambda_alias": ("Lambda", "Free - Lambda aliases have no charge"),
+            
+            # Step Functions (Free tier available)
+            "aws_sfn_state_machine": ("Step Functions", "Free - Step Functions state machines have no charge (pay for executions)"),
+            "aws_sfn_activity": ("Step Functions", "Free - Step Functions activities have no charge"),
+            
+            # Cognito (Free tier available)
+            "aws_cognito_user_pool": ("Cognito", "Free - Cognito user pools have no charge (pay for MAUs)"),
+            "aws_cognito_user_pool_client": ("Cognito", "Free - Cognito user pool clients have no charge"),
+            "aws_cognito_user_pool_domain": ("Cognito", "Free - Cognito user pool domains have no charge"),
+            "aws_cognito_identity_pool": ("Cognito", "Free - Cognito identity pools have no charge"),
+            "aws_cognito_identity_provider": ("Cognito", "Free - Cognito identity providers have no charge"),
+            "aws_cognito_user_group": ("Cognito", "Free - Cognito user groups have no charge"),
+            "aws_cognito_user_pool_ui_customization": ("Cognito", "Free - Cognito UI customizations have no charge"),
+            
+            # SES (Free tier available)
+            "aws_ses_domain_identity": ("SES", "Free - SES domain identities have no charge"),
+            "aws_ses_email_identity": ("SES", "Free - SES email identities have no charge"),
+            "aws_ses_domain_identity_verification": ("SES", "Free - SES domain identity verifications have no charge"),
+            "aws_ses_email_identity_verification": ("SES", "Free - SES email identity verifications have no charge"),
+            "aws_ses_configuration_set": ("SES", "Free - SES configuration sets have no charge"),
+            "aws_ses_event_destination": ("SES", "Free - SES event destinations have no charge"),
+            "aws_ses_identity_policy": ("SES", "Free - SES identity policies have no charge"),
+            "aws_ses_receipt_rule": ("SES", "Free - SES receipt rules have no charge"),
+            "aws_ses_receipt_rule_set": ("SES", "Free - SES receipt rule sets have no charge"),
+            "aws_ses_template": ("SES", "Free - SES templates have no charge"),
+            
+            # CloudFront (Free tier available)
+            "aws_cloudfront_distribution": ("CloudFront", "Free - CloudFront distributions have no charge (pay for data transfer)"),
+            "aws_cloudfront_origin_access_identity": ("CloudFront", "Free - CloudFront origin access identities have no charge"),
+            "aws_cloudfront_origin_access_control": ("CloudFront", "Free - CloudFront origin access controls have no charge"),
+            "aws_cloudfront_public_key": ("CloudFront", "Free - CloudFront public keys have no charge"),
+            "aws_cloudfront_key_group": ("CloudFront", "Free - CloudFront key groups have no charge"),
+            "aws_cloudfront_cache_policy": ("CloudFront", "Free - CloudFront cache policies have no charge"),
+            "aws_cloudfront_response_headers_policy": ("CloudFront", "Free - CloudFront response headers policies have no charge"),
+            "aws_cloudfront_realtime_log_config": ("CloudFront", "Free - CloudFront realtime log configs have no charge"),
+            "aws_cloudfront_monitoring_subscription": ("CloudFront", "Free - CloudFront monitoring subscriptions have no charge"),
+            "aws_cloudfront_origin_request_policy": ("CloudFront", "Free - CloudFront origin request policies have no charge"),
+            "aws_cloudfront_field_level_encryption_config": ("CloudFront", "Free - CloudFront field level encryption configs have no charge"),
+            "aws_cloudfront_field_level_encryption_profile": ("CloudFront", "Free - CloudFront field level encryption profiles have no charge"),
+            
+            # WAF (Free tier available)
+            "aws_waf_web_acl": ("WAF", "Free - WAF web ACLs have no charge (pay for requests)"),
+            "aws_waf_rule": ("WAF", "Free - WAF rules have no charge"),
+            "aws_waf_rule_group": ("WAF", "Free - WAF rule groups have no charge"),
+            "aws_waf_ipset": ("WAF", "Free - WAF IP sets have no charge"),
+            "aws_waf_byte_match_set": ("WAF", "Free - WAF byte match sets have no charge"),
+            "aws_waf_size_constraint_set": ("WAF", "Free - WAF size constraint sets have no charge"),
+            "aws_waf_sql_injection_match_set": ("WAF", "Free - WAF SQL injection match sets have no charge"),
+            "aws_waf_xss_match_set": ("WAF", "Free - WAF XSS match sets have no charge"),
+            "aws_waf_geo_match_set": ("WAF", "Free - WAF geo match sets have no charge"),
+            "aws_waf_regex_match_set": ("WAF", "Free - WAF regex match sets have no charge"),
+            "aws_waf_rate_based_rule": ("WAF", "Free - WAF rate-based rules have no charge"),
+            "aws_waf_regex_pattern_set": ("WAF", "Free - WAF regex pattern sets have no charge"),
+            
+            # Shield (Free tier available)
+            "aws_shield_protection": ("Shield", "Free - Shield protections have no charge (Standard tier free)"),
+            "aws_shield_protection_group": ("Shield", "Free - Shield protection groups have no charge"),
+            "aws_shield_protection_health_check_association": ("Shield", "Free - Shield protection health check associations have no charge"),
+            
+            # ECS (Free - pay for underlying resources)
+            "aws_ecs_cluster": ("ECS", "Free - ECS clusters have no charge (pay for tasks/services)"),
+            "aws_ecs_service": ("ECS", "Free - ECS services have no charge (pay for tasks)"),
+            "aws_ecs_task_definition": ("ECS", "Free - ECS task definitions have no charge"),
+            "aws_ecs_capacity_provider": ("ECS", "Free - ECS capacity providers have no charge"),
+            "aws_ecs_cluster_capacity_providers": ("ECS", "Free - ECS cluster capacity providers have no charge"),
+            "aws_ecs_task_set": ("ECS", "Free - ECS task sets have no charge"),
+            
+            # ECR (Free tier available)
+            "aws_ecr_repository": ("ECR", "Free - ECR repositories have no charge (pay for storage)"),
+            "aws_ecr_lifecycle_policy": ("ECR", "Free - ECR lifecycle policies have no charge"),
+            "aws_ecr_repository_policy": ("ECR", "Free - ECR repository policies have no charge"),
+            "aws_ecr_replication_configuration": ("ECR", "Free - ECR replication configurations have no charge"),
+            "aws_ecr_registry_policy": ("ECR", "Free - ECR registry policies have no charge"),
+            "aws_ecr_pull_through_cache_rule": ("ECR", "Free - ECR pull through cache rules have no charge"),
+            
+            # CodeCommit (Free tier available)
+            "aws_codecommit_repository": ("CodeCommit", "Free - CodeCommit repositories have no charge (pay for storage/requests)"),
+            "aws_codecommit_trigger": ("CodeCommit", "Free - CodeCommit triggers have no charge"),
+            "aws_codecommit_approval_rule_template": ("CodeCommit", "Free - CodeCommit approval rule templates have no charge"),
+            "aws_codecommit_approval_rule_template_association": ("CodeCommit", "Free - CodeCommit approval rule template associations have no charge"),
+            
+            # CodeBuild (Free tier available)
+            "aws_codebuild_project": ("CodeBuild", "Free - CodeBuild projects have no charge (pay for build minutes)"),
+            "aws_codebuild_report_group": ("CodeBuild", "Free - CodeBuild report groups have no charge"),
+            "aws_codebuild_source_credential": ("CodeBuild", "Free - CodeBuild source credentials have no charge"),
+            "aws_codebuild_webhook": ("CodeBuild", "Free - CodeBuild webhooks have no charge"),
+            
+            # CodeDeploy (Free)
+            "aws_codedeploy_app": ("CodeDeploy", "Free - CodeDeploy applications have no charge"),
+            "aws_codedeploy_deployment_group": ("CodeDeploy", "Free - CodeDeploy deployment groups have no charge"),
+            "aws_codedeploy_deployment_config": ("CodeDeploy", "Free - CodeDeploy deployment configs have no charge"),
+            
+            # CodePipeline (Free tier available)
+            "aws_codepipeline": ("CodePipeline", "Free - CodePipeline pipelines have no charge (pay for actions)"),
+            "aws_codepipeline_webhook": ("CodePipeline", "Free - CodePipeline webhooks have no charge"),
+            
+            # DynamoDB (Free tier available)
+            "aws_dynamodb_table_item": ("DynamoDB", "Free - DynamoDB table items have no charge"),
+            "aws_dynamodb_tag": ("DynamoDB", "Free - DynamoDB tags have no charge"),
+            
+            # AppSync (Free tier available)
+            "aws_appsync_graphql_api": ("AppSync", "Free - AppSync GraphQL APIs have no charge (pay for requests)"),
+            "aws_appsync_api_key": ("AppSync", "Free - AppSync API keys have no charge"),
+            "aws_appsync_datasource": ("AppSync", "Free - AppSync datasources have no charge"),
+            "aws_appsync_function": ("AppSync", "Free - AppSync functions have no charge"),
+            "aws_appsync_resolver": ("AppSync", "Free - AppSync resolvers have no charge"),
+            
+            # Amplify (Free tier available)
+            "aws_amplify_app": ("Amplify", "Free - Amplify apps have no charge (pay for hosting)"),
+            "aws_amplify_branch": ("Amplify", "Free - Amplify branches have no charge"),
+            "aws_amplify_domain_association": ("Amplify", "Free - Amplify domain associations have no charge"),
+            
+            # Pinpoint (Free tier available)
+            "aws_pinpoint_app": ("Pinpoint", "Free - Pinpoint apps have no charge (pay for messages)"),
+            "aws_pinpoint_adm_channel": ("Pinpoint", "Free - Pinpoint ADM channels have no charge"),
+            "aws_pinpoint_apns_channel": ("Pinpoint", "Free - Pinpoint APNS channels have no charge"),
+            "aws_pinpoint_apns_sandbox_channel": ("Pinpoint", "Free - Pinpoint APNS sandbox channels have no charge"),
+            "aws_pinpoint_apns_voip_channel": ("Pinpoint", "Free - Pinpoint APNS VoIP channels have no charge"),
+            "aws_pinpoint_apns_voip_sandbox_channel": ("Pinpoint", "Free - Pinpoint APNS VoIP sandbox channels have no charge"),
+            "aws_pinpoint_baidu_channel": ("Pinpoint", "Free - Pinpoint Baidu channels have no charge"),
+            "aws_pinpoint_email_channel": ("Pinpoint", "Free - Pinpoint email channels have no charge"),
+            "aws_pinpoint_event_stream": ("Pinpoint", "Free - Pinpoint event streams have no charge"),
+            "aws_pinpoint_gcm_channel": ("Pinpoint", "Free - Pinpoint GCM channels have no charge"),
+            "aws_pinpoint_sms_channel": ("Pinpoint", "Free - Pinpoint SMS channels have no charge"),
         }
         
-        if terraform_type in free_networking_resources:
-            service_name, reason = free_networking_resources[terraform_type]
+        if terraform_type in free_resources:
+            service_name, reason = free_resources[terraform_type]
             assumptions.append(reason)
             return CostLineItem(
                 cloud="aws",
@@ -227,9 +509,156 @@ class CostEstimator:
                 confidence="high"
             )
         
+        # Handle Lambda functions (request-based pricing, not instance-based)
+        is_lambda = (
+            terraform_type == "aws_lambda_function"
+            or terraform_type.startswith("aws_lambda_")
+            or service.upper() == "LAMBDA"
+            or "LAMBDA" in service.upper()
+            or (terraform_type and "lambda" in terraform_type.lower())
+        )
+        
+        if is_lambda:
+            try:
+                # Lambda pricing is based on:
+                # 1. Requests: $0.20 per 1M requests (first 1M free per month)
+                # 2. Compute: $0.0000166667 per GB-second (128 MB minimum)
+                # 
+                # Default assumptions for a basic Lambda function:
+                # - 1M requests/month (first 1M are free)
+                # - 128 MB memory
+                # - 100ms average duration
+                # - 1 GB-second per request = 0.128 GB × 0.1 seconds
+                
+                requests_per_month = usage.get("requests_per_month", 1000000)  # Default: 1M requests
+                memory_mb = usage.get("memory_mb", 128)  # Default: 128 MB
+                duration_ms = usage.get("duration_ms", 100)  # Default: 100ms
+                
+                assumptions.append(f"Lambda function with {memory_mb} MB memory")
+                assumptions.append(f"Estimated {requests_per_month:,} requests/month")
+                assumptions.append(f"Estimated {duration_ms}ms average duration")
+                assumptions.append("Lambda pricing: $0.20 per 1M requests (first 1M free) + compute time")
+                
+                # Request pricing: $0.20 per 1M requests, first 1M free
+                billable_requests = max(0, requests_per_month - 1000000)
+                request_cost = (billable_requests / 1000000) * 0.20
+                
+                # Compute pricing: $0.0000166667 per GB-second
+                # GB-seconds = (memory_mb / 1024) * (duration_ms / 1000) * requests
+                memory_gb = memory_mb / 1024
+                duration_seconds = duration_ms / 1000
+                gb_seconds = memory_gb * duration_seconds * requests_per_month
+                compute_cost = gb_seconds * 0.0000166667
+                
+                total_monthly_cost = request_cost + compute_cost
+                
+                return CostLineItem(
+                    cloud="aws",
+                    service="Lambda",
+                    resource_name=resource_name,
+                    terraform_type=terraform_type,
+                    region=resolved_region,
+                    monthly_cost_usd=total_monthly_cost * resolved_count,
+                    pricing_unit="month",
+                    assumptions=assumptions,
+                    priced=True,
+                    confidence="low"  # Low confidence because Lambda costs are highly usage-dependent
+                )
+            except Exception as error:
+                logger.warning(f"Error calculating Lambda pricing for {resource_name}: {error}", exc_info=True)
+                # Return a minimal cost estimate even if calculation fails
+                return CostLineItem(
+                    cloud="aws",
+                    service="Lambda",
+                    resource_name=resource_name,
+                    terraform_type=terraform_type,
+                    region=resolved_region,
+                    monthly_cost_usd=0.01 * resolved_count,  # Minimal estimate
+                    pricing_unit="month",
+                    assumptions=assumptions + [f"Lambda pricing calculation had an error, using minimal estimate"],
+                    priced=True,
+                    confidence="low"
+                )
+        
+        # Handle S3 buckets (storage-based pricing, not instance-based)
+        # Check multiple variations of S3 identification
+        is_s3 = (
+            terraform_type == "aws_s3_bucket" 
+            or terraform_type.startswith("aws_s3_")
+            or service.upper() == "S3"
+            or "S3" in service.upper()
+            or (terraform_type and "s3" in terraform_type.lower())
+        )
+        
+        if is_s3:
+            try:
+                # S3 pricing is based on storage, requests, and data transfer
+                # For a basic bucket estimate, we'll use a minimal storage assumption
+                # Default: 1 GB storage (first 50 GB are free in standard tier, but we'll estimate minimal cost)
+                storage_gb = usage.get("storage_gb", 1.0)
+                assumptions.append(f"S3 bucket with estimated {storage_gb} GB storage")
+                assumptions.append("S3 pricing varies by storage class, requests, and data transfer")
+                assumptions.append("This is a minimal estimate - actual costs depend on usage patterns")
+                
+                # Basic S3 Standard storage pricing (approximate, varies by region)
+                # First 50 TB: ~$0.023 per GB/month in us-east-1
+                # For minimal estimate, use a small fixed cost
+                # Note: First 50 GB of standard storage is free, but we'll estimate for potential growth
+                monthly_cost = max(0.0, (storage_gb - 50) * 0.023) if storage_gb > 50 else 0.0
+                
+                # Add minimal request costs (very small for basic usage)
+                # PUT requests: ~$0.005 per 1,000 requests
+                # GET requests: ~$0.0004 per 1,000 requests
+                # For a basic bucket, assume minimal requests
+                requests_per_month = usage.get("requests_per_month", 1000)
+                request_cost = (requests_per_month / 1000) * 0.001  # Minimal estimate
+                
+                total_monthly_cost = monthly_cost + request_cost
+                
+                return CostLineItem(
+                    cloud="aws",
+                    service="S3",
+                    resource_name=resource_name,
+                    terraform_type=terraform_type,
+                    region=resolved_region,
+                    monthly_cost_usd=total_monthly_cost * resolved_count,
+                    pricing_unit="month",
+                    assumptions=assumptions,
+                    priced=True,
+                    confidence="low"  # Low confidence because S3 costs are highly usage-dependent
+                )
+            except Exception as error:
+                logger.error(f"Error calculating S3 pricing for {resource_name}: {error}", exc_info=True)
+                # Return a minimal cost estimate even if calculation fails
+                return CostLineItem(
+                    cloud="aws",
+                    service="S3",
+                    resource_name=resource_name,
+                    terraform_type=terraform_type,
+                    region=resolved_region,
+                    monthly_cost_usd=0.01 * resolved_count,  # Minimal estimate
+                    pricing_unit="month",
+                    assumptions=assumptions + [f"S3 pricing calculation had an error, using minimal estimate"],
+                    priced=True,
+                    confidence="low"
+                )
+        
         # Extract instance type or SKU
-        instance_type = size_hint.get("instance_type") or size_hint.get("sku")
+        # For RDS, also check instance_class (common in Terraform)
+        instance_type = (
+            size_hint.get("instance_type") 
+            or size_hint.get("instance_class")  # RDS uses instance_class
+            or size_hint.get("sku")
+        )
+        
+        # If no instance_type found, this resource type may not be supported for pricing
+        # Return None to mark as unpriced (will be handled gracefully by caller)
         if not instance_type:
+            # Log for debugging but don't raise error - some resources legitimately don't have instance types
+            logger.debug(
+                f"No instance_type/sku found for {resource_name} ({terraform_type}). "
+                f"Service: {service}, Size hint: {size_hint}"
+            )
             return None
         
         # Baseline fallback prices for common instance types (approximate).
@@ -282,8 +711,13 @@ class CostEstimator:
                         region=resolved_region
                     )
                 elif "RDS" in service or terraform_type.startswith("aws_db"):
-                    # Extract engine from size_hint (e.g., {"engine": "mysql"}) or default to mysql
-                    engine = size_hint.get("engine", "mysql")
+                    # Extract engine from size_hint (e.g., {"engine": "mysql"}) or resource attributes
+                    # Also check resource.get("size", {}) in case engine is stored there
+                    engine = (
+                        size_hint.get("engine") 
+                        or resource.get("size", {}).get("engine")
+                        or "mysql"  # Default to mysql
+                    )
                     hourly_price = await self.aws_bulk_client.get_rds_instance_price(
                         instance_type=instance_type,
                         region=resolved_region,
@@ -296,8 +730,13 @@ class CostEstimator:
                         region=resolved_region
                     )
                 elif "RDS" in service or terraform_type.startswith("aws_db"):
-                    # Extract engine from size_hint (e.g., {"engine": "mysql"}) or default to mysql
-                    engine = size_hint.get("engine", "mysql")
+                    # Extract engine from size_hint (e.g., {"engine": "mysql"}) or resource attributes
+                    # Also check resource.get("size", {}) in case engine is stored there
+                    engine = (
+                        size_hint.get("engine") 
+                        or resource.get("size", {}).get("engine")
+                        or "mysql"  # Default to mysql
+                    )
                     hourly_price = await self.aws_client.get_rds_instance_price(
                         instance_type=instance_type,
                         region=resolved_region,

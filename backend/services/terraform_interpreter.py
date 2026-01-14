@@ -1,12 +1,17 @@
 """
-Terraform interpreter service using Mistral AI.
+Terraform interpreter service using OpenAI with Mistral fallback.
 Interprets Terraform files into structured cost-intent representation.
 """
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import json
+import logging
 
 from backend.services.mistral_client import MistralClient, MistralAPIError
+from backend.services.openai_client import OpenAIClient, OpenAIAPIError
 from backend.core.config import config
+
+
+logger = logging.getLogger(__name__)
 
 
 class TerraformInterpreterError(Exception):
@@ -15,16 +20,26 @@ class TerraformInterpreterError(Exception):
 
 
 class TerraformInterpreter:
-    """Service for interpreting Terraform files using Mistral AI."""
+    """Service for interpreting Terraform files using Mistral AI with OpenAI fallback."""
     
-    def __init__(self, mistral_client: MistralClient = None):
+    def __init__(
+        self, 
+        mistral_client: MistralClient = None,
+        openai_client: OpenAIClient = None,
+        ai_api_key: Optional[str] = None
+    ):
         """
         Initialize Terraform interpreter.
         
         Args:
             mistral_client: Mistral client instance (creates new if None)
+            openai_client: OpenAI client instance (creates new if None, used as fallback)
+            ai_api_key: Optional API key to use for both clients (from X-AI-API-Key header)
         """
-        self.mistral_client = mistral_client or MistralClient()
+        self.ai_api_key = ai_api_key
+        self.mistral_client = mistral_client or MistralClient(api_key=ai_api_key)
+        self.openai_client = openai_client or OpenAIClient(api_key=ai_api_key)
+        self.last_used_provider = None  # Track which provider was used successfully
     
     def _build_interpretation_prompt(self, terraform_files: List[Dict[str, str]]) -> str:
         """
@@ -192,17 +207,45 @@ Return ONLY valid JSON, no markdown, no explanation, no code blocks."""
             }
         ]
         
-        # Call Mistral API with JSON response format enforced
+        # Try OpenAI first, then fall back to Mistral if OpenAI fails
+        response = None
+        last_error = None
+        
+        # Try OpenAI API first
         try:
-            response = await self.mistral_client.chat_completion(
+            logger.info("Attempting Terraform interpretation with OpenAI")
+            response = await self.openai_client.chat_completion(
                 messages=messages,
                 temperature=0.1,  # Low temperature for deterministic output
                 response_format={"type": "json_object"}  # Enforce JSON response
             )
-        except MistralAPIError as error:
+            self.last_used_provider = "openai"
+            logger.info("Successfully interpreted Terraform with OpenAI")
+        except OpenAIAPIError as error:
+            last_error = error
+            logger.warning(f"OpenAI API failed: {error}. Attempting fallback to Mistral...")
+            
+            # Fallback to Mistral
+            try:
+                logger.info("Attempting Terraform interpretation with Mistral (fallback)")
+                response = await self.mistral_client.chat_completion(
+                    messages=messages,
+                    temperature=0.1,  # Low temperature for deterministic output
+                    response_format={"type": "json_object"}  # Enforce JSON response
+                )
+                self.last_used_provider = "mistral"
+                logger.info("Successfully interpreted Terraform with Mistral (fallback)")
+            except MistralAPIError as mistral_error:
+                # Both providers failed
+                logger.error(f"Both OpenAI and Mistral failed. OpenAI: {error}, Mistral: {mistral_error}")
+                raise TerraformInterpreterError(
+                    f"Failed to interpret Terraform files: OpenAI failed ({str(error)}), Mistral fallback also failed ({str(mistral_error)})"
+                ) from mistral_error
+        
+        if not response:
             raise TerraformInterpreterError(
-                f"Failed to interpret Terraform files: {str(error)}"
-            ) from error
+                f"Failed to interpret Terraform files: {str(last_error)}"
+            ) from last_error
         
         # Extract content from response
         choices = response.get("choices", [])

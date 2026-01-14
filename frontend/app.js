@@ -300,8 +300,12 @@ function groupByCategory(lineItems) {
 
 /**
  * Render cost driver cards
+ * NOTE: This section has been removed - cost drivers are now shown in detailed breakdown only
  */
 function renderCostDrivers(lineItems, totalCost, scenarioDeltas = null) {
+    // Section removed - cost drivers are now shown in detailed breakdown only
+    return;
+    
     const container = document.getElementById('cost-drivers');
     if (!container) return;
     
@@ -397,11 +401,9 @@ function renderCostDrivers(lineItems, totalCost, scenarioDeltas = null) {
             
             // Expand breakdown and scroll to it
             const breakdownContent = document.getElementById('breakdown-content');
-            const toggleButton = document.getElementById('toggle-breakdown');
-            if (breakdownContent && toggleButton && breakdownContent.style.display === 'none') {
+            // Breakdown is always visible - no toggle needed
+            if (breakdownContent) {
                 breakdownContent.style.display = 'block';
-                toggleButton.setAttribute('aria-expanded', 'true');
-                toggleButton.querySelector('.button-text').textContent = 'Hide Details';
             }
             
             // Highlight category rows in table
@@ -650,11 +652,9 @@ function showTableHint(insightCard, matchingCount) {
     if (hintButton) {
         hintButton.addEventListener('click', () => {
             const breakdownContent = document.getElementById('breakdown-content');
-            const toggleButton = document.getElementById('toggle-breakdown');
-            if (breakdownContent && toggleButton) {
+            // Breakdown is always visible - no toggle needed
+            if (breakdownContent) {
                 breakdownContent.style.display = 'block';
-                toggleButton.setAttribute('aria-expanded', 'true');
-                toggleButton.querySelector('.button-text').textContent = 'Hide Details';
             }
             hideTableHint();
         });
@@ -939,7 +939,8 @@ function renderCostTable(lineItems, deltas = null) {
     
     lineItems.forEach(item => {
         const row = document.createElement('tr');
-        const intensity = calculateCostIntensity(item.monthly_cost_usd, maxCost);
+        // Handle case where maxCost is 0 to avoid NaN
+        const intensity = maxCost > 0 ? calculateCostIntensity(item.monthly_cost_usd || 0, maxCost) : 0;
         row.className = `cost-row ${getCostRowClass(intensity)}`;
         
         // Add data attributes for insight linking
@@ -976,6 +977,7 @@ function renderCostTable(lineItems, deltas = null) {
         // Monthly Cost
         const costCell = document.createElement('td');
         costCell.className = 'cost-value';
+        costCell.style.textAlign = 'right';
         if (item.monthly_cost_usd === 0) {
             costCell.classList.add('zero');
         }
@@ -1035,17 +1037,23 @@ function renderCostTable(lineItems, deltas = null) {
  */
 function renderUnpricedResources(unpricedResources) {
     const container = document.getElementById('unpriced-resources');
+    const section = document.getElementById('unpriced-section');
+    
     if (!container) return;
     
     container.innerHTML = '';
     
+    // Hide section if no unpriced resources
     if (!unpricedResources || unpricedResources.length === 0) {
-        const empty = document.createElement('p');
-        empty.textContent = 'All resources were successfully priced.';
-        empty.style.color = '#9ca3af';
-        empty.style.fontStyle = 'italic';
-        container.appendChild(empty);
+        if (section) {
+            section.style.display = 'none';
+        }
         return;
+    }
+    
+    // Show section if there are unpriced resources
+    if (section) {
+        section.style.display = 'block';
     }
     
     unpricedResources.forEach(resource => {
@@ -1153,8 +1161,7 @@ function renderInsights(insights) {
             card.dataset.insightType = insight.type;
         }
         
-        // Store affected resources for matching
-        const affectedResources = insight.affected_resources || [];
+        // Affected resources removed - no longer displayed
         
         card.innerHTML = `
             <div class="insight-header">
@@ -1162,14 +1169,6 @@ function renderInsights(insights) {
                 <span class="insight-type">${insight.type.replace(/_/g, ' ')}</span>
             </div>
             <div class="insight-description">${insight.description}</div>
-            ${insight.affected_resources && insight.affected_resources.length > 0 ? `
-                <div class="insight-resources">
-                    <div class="insight-resources-label">Affected Resources:</div>
-                    ${insight.affected_resources.map(resource => 
-                        `<span class="insight-resource-tag" data-resource-name="${resource}" role="button" tabindex="0">${resource}</span>`
-                    ).join('')}
-                </div>
-            ` : ''}
             ${insight.suggestions && insight.suggestions.length > 0 ? `
                 <div class="insight-suggestions">
                     <div class="insight-suggestions-title">Suggestions</div>
@@ -1190,33 +1189,13 @@ function renderInsights(insights) {
         
         // Add click handler for the entire card
         card.addEventListener('click', (e) => {
-            // Don't trigger if clicking on resource tag (handled separately)
-            if (e.target.classList.contains('insight-resource-tag')) return;
             // Don't trigger if clicking on clear button
             if (e.target.classList.contains('clear-focus-btn')) return;
             
-            focusInsight(`insight-${index}`, affectedResources, insight.type);
+            focusInsight(`insight-${index}`, [], insight.type);
         });
         
-        // Add click handlers for resource tags
-        const resourceTags = card.querySelectorAll('.insight-resource-tag');
-        resourceTags.forEach(tag => {
-            tag.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const resourceName = tag.dataset.resourceName;
-                focusInsight(`insight-${index}`, [resourceName], insight.type);
-            });
-            
-            // Keyboard accessibility
-            tag.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const resourceName = tag.dataset.resourceName;
-                    focusInsight(`insight-${index}`, [resourceName], insight.type);
-                }
-            });
-        });
+        // Resource tags removed - no click handlers needed
         
         // Add clear focus button handler
         const clearBtn = card.querySelector('.clear-focus-btn');
@@ -1236,24 +1215,11 @@ function renderInsights(insights) {
  * Initialize expandable breakdown section
  */
 function initBreakdownToggle() {
-    const toggleButton = document.getElementById('toggle-breakdown');
+    // Breakdown is always visible now - no toggle needed
     const breakdownContent = document.getElementById('breakdown-content');
-    
-    if (!toggleButton || !breakdownContent) return;
-    
-    toggleButton.addEventListener('click', () => {
-        const isExpanded = toggleButton.getAttribute('aria-expanded') === 'true';
-        
-        if (isExpanded) {
-            breakdownContent.style.display = 'none';
-            toggleButton.setAttribute('aria-expanded', 'false');
-            toggleButton.querySelector('.button-text').textContent = 'Show Details';
-        } else {
-            breakdownContent.style.display = 'block';
-            toggleButton.setAttribute('aria-expanded', 'true');
-            toggleButton.querySelector('.button-text').textContent = 'Hide Details';
-        }
-    });
+    if (breakdownContent) {
+        breakdownContent.style.display = 'block';
+    }
 }
 
 /**
@@ -1272,7 +1238,7 @@ function initRegionDropdown() {
     
     // Clear existing options
     regionOptions.innerHTML = '';
-    
+        
     COMMON_REGIONS.forEach(region => {
         const option = document.createElement('div');
         option.className = 'region-option';
@@ -2646,7 +2612,7 @@ function initTerraformInput() {
                             fileList.style.display = 'none';
                         }
                     } else {
-                        handleFiles(uploadedFiles);
+                    handleFiles(uploadedFiles);
                     }
                 });
                 
@@ -2807,12 +2773,12 @@ async function estimateFromLocal(terraformText = null, files = null, silent = fa
     try {
         // Show loading state (only if not in silent mode)
         if (!silent) {
-            const estimateBtn = terraformText 
-                ? document.getElementById('estimate-from-text-btn')
-                : document.getElementById('estimate-from-files-btn');
-            if (estimateBtn) {
-                estimateBtn.disabled = true;
-                estimateBtn.textContent = 'Calculating...';
+        const estimateBtn = terraformText 
+            ? document.getElementById('estimate-from-text-btn')
+            : document.getElementById('estimate-from-files-btn');
+        if (estimateBtn) {
+            estimateBtn.disabled = true;
+            estimateBtn.textContent = 'Calculating...';
             }
         }
         
@@ -2896,7 +2862,7 @@ async function estimateFromLocal(terraformText = null, files = null, silent = fa
             if (!silent) {
                 // Scroll to results section with a small delay to ensure DOM is updated
                 setTimeout(() => {
-                    if (resultsSection) {
+            if (resultsSection) {
                         resultsSection.scrollIntoView({ 
                             behavior: 'smooth', 
                             block: 'start',
@@ -2908,8 +2874,30 @@ async function estimateFromLocal(terraformText = null, files = null, silent = fa
         }
     } catch (error) {
         console.error('Failed to estimate costs:', error);
+        
+        // Clear the detailed breakdown table on error
+        const tbody = document.getElementById('cost-table-body');
+        if (tbody) {
+            tbody.innerHTML = '';
+            const row = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.colSpan = 7;
+            cell.textContent = 'Unable to load cost data. Please try again.';
+            cell.style.textAlign = 'center';
+            cell.style.color = '#9ca3af';
+            cell.style.padding = '2rem';
+            row.appendChild(cell);
+            tbody.appendChild(row);
+        }
+        
+        // Clear unpriced resources section
+        const unpricedContainer = document.getElementById('unpriced-resources');
+        if (unpricedContainer) {
+            unpricedContainer.innerHTML = '';
+        }
+        
         if (!silent) {
-            alert(`Failed to estimate costs: ${error.message}`);
+        alert(`Failed to estimate costs: ${error.message}`);
         }
         
         // Restore opacity on error
@@ -2920,12 +2908,12 @@ async function estimateFromLocal(terraformText = null, files = null, silent = fa
     } finally {
         // Reset button state (only if not in silent mode)
         if (!silent) {
-            const estimateBtn = terraformText 
-                ? document.getElementById('estimate-from-text-btn')
-                : document.getElementById('estimate-from-files-btn');
-            if (estimateBtn) {
-                estimateBtn.disabled = false;
-                estimateBtn.textContent = 'Estimate Costs';
+        const estimateBtn = terraformText 
+            ? document.getElementById('estimate-from-text-btn')
+            : document.getElementById('estimate-from-files-btn');
+        if (estimateBtn) {
+            estimateBtn.disabled = false;
+            estimateBtn.textContent = 'Estimate Costs';
             }
         }
     }
@@ -3037,73 +3025,11 @@ function addReadOnlyBanner() {
 
 /**
  * Initialize traffic assumptions input with real-time updates
+ * NOTE: Traffic assumptions removed per user request - this function is kept for compatibility but does nothing
  */
 function initTrafficInput() {
-    const usersInput = document.getElementById('users-input');
-    if (!usersInput) return;
-    
-    let debounceTimer = null;
-    const DEBOUNCE_DELAY = 800; // Wait 800ms after user stops typing
-    
-    usersInput.addEventListener('input', (e) => {
-        // Clear existing timer
-        if (debounceTimer) {
-            clearTimeout(debounceTimer);
-        }
-        
-        // Set new timer
-        debounceTimer = setTimeout(async () => {
-            const usersValue = e.target.value.trim();
-            
-            // Only update if we have an estimate and a valid number
-            if (!currentIntentGraph || !baseEstimate) {
-                return;
-            }
-            
-            // If empty, reset to base estimate
-            if (!usersValue || usersValue === '') {
-                if (currentScenario && currentScenario.users !== undefined) {
-                    // Reset scenario
-                    resetScenario();
-                }
-                return;
-            }
-            
-            const users = parseInt(usersValue, 10);
-            if (isNaN(users) || users < 0) {
-                return; // Invalid input, don't update
-            }
-            
-            // Update estimate with new users value
-            await updateEstimateWithUsers(users);
-        }, DEBOUNCE_DELAY);
-    });
-    
-    // Also update on blur (when user leaves the field)
-    usersInput.addEventListener('blur', async (e) => {
-        if (debounceTimer) {
-            clearTimeout(debounceTimer);
-        }
-        
-        const usersValue = e.target.value.trim();
-        if (!currentIntentGraph || !baseEstimate) {
-            return;
-        }
-        
-        if (!usersValue || usersValue === '') {
-            if (currentScenario && currentScenario.users !== undefined) {
-                resetScenario();
-            }
-            return;
-        }
-        
-        const users = parseInt(usersValue, 10);
-        if (isNaN(users) || users < 0) {
-            return;
-        }
-        
-        await updateEstimateWithUsers(users);
-    });
+    // Traffic assumptions feature removed - function kept for compatibility
+    return;
 }
 
 /**

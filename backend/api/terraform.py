@@ -15,6 +15,7 @@ from backend.services.terraform_interpreter import TerraformInterpreter, Terrafo
 from backend.services.cost_estimator import CostEstimator, CostEstimatorError
 from backend.services.cost_insights import CostInsightsService, CostInsightsError
 from backend.services.mistral_client import MistralClient, MistralAPIError
+from backend.services.openai_client import OpenAIAPIError
 from backend.domain.scenario_models import ScenarioInput
 from backend.domain.cost_models import CostEstimate
 from backend.domain.scenario_models import ScenarioEstimateResult
@@ -250,8 +251,8 @@ async def interpret_terraform_files(
         ]
         
         # Initialize interpreter with user-provided AI key (or None for server fallback)
-        mistral_client = MistralClient(api_key=ai_api_key) if ai_api_key else None
-        interpreter = TerraformInterpreter(mistral_client=mistral_client)
+        # The interpreter will try Mistral first, then fall back to OpenAI automatically
+        interpreter = TerraformInterpreter(ai_api_key=ai_api_key)
         try:
             intent_graph = await interpreter.interpret(terraform_files)
         except TerraformInterpreterError as error:
@@ -724,8 +725,8 @@ async def estimate_local_terraform(
         
         # Interpret Terraform files
         logger.info("estimate_local_terraform: Stage=intent_graph - Starting Terraform interpretation")
-        mistral_client = MistralClient(api_key=ai_api_key) if ai_api_key else None
-        interpreter = TerraformInterpreter(mistral_client=mistral_client)
+        # The interpreter will try Mistral first, then fall back to OpenAI automatically
+        interpreter = TerraformInterpreter(ai_api_key=ai_api_key)
         
         try:
             intent_graph = await interpreter.interpret(terraform_files)
@@ -738,18 +739,19 @@ async def estimate_local_terraform(
                 status_code=400,
                 detail=f"Failed to interpret Terraform files: {str(error)}"
             ) from error
-        except MistralAPIError as error:
+        except (MistralAPIError, OpenAIAPIError) as error:
             error_msg = str(error).lower()
-            logger.error("estimate_local_terraform: Stage=intent_graph - MistralAPIError - %s: %s", 
-                        type(error).__name__, str(error))
+            provider = "Mistral" if isinstance(error, MistralAPIError) else "OpenAI"
+            logger.error("estimate_local_terraform: Stage=intent_graph - %sAPIError - %s: %s", 
+                        provider, type(error).__name__, str(error))
             if "key" in error_msg or "unauthorized" in error_msg or "401" in error_msg or "403" in error_msg:
                 raise HTTPException(
                     status_code=401,
-                    detail="AI provider rejected the provided API key."
+                    detail=f"{provider} rejected the provided API key."
                 ) from error
             raise HTTPException(
                 status_code=502,
-                detail="Mistral AI service unavailable"
+                detail=f"{provider} service unavailable (both providers failed)"
             ) from error
         
         # Extract region override from request if provided

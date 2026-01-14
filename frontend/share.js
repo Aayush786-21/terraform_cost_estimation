@@ -250,14 +250,6 @@ function renderInsights(insights) {
                 <span class="insight-type">${insight.type.replace(/_/g, ' ')}</span>
             </div>
             <div class="insight-description">${insight.description}</div>
-            ${insight.affected_resources && insight.affected_resources.length > 0 ? `
-                <div class="insight-resources">
-                    <div class="insight-resources-label">Affected Resources:</div>
-                    ${insight.affected_resources.map(resource => 
-                        `<span class="insight-resource-tag">${resource}</span>`
-                    ).join('')}
-                </div>
-            ` : ''}
             ${insight.suggestions && insight.suggestions.length > 0 ? `
                 <div class="insight-suggestions">
                     <div class="insight-suggestions-title">Suggestions</div>
